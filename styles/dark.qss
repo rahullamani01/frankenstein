@@ -1,0 +1,238 @@
+/* Frankenstein Dark — base theme. Swap this file out later for a theme engine. */
+
+QMainWindow, QWidget {
+    background-color: #121212;
+    color: #EDEDED;
+    font-family: "SF Pro Text", "Segoe UI", sans-serif;
+    font-size: 13px;
+}
+
+/* --- Sidebar --- */
+#Sidebar {
+    background-color: #0A0A0A;
+    border-right: 1px solid #1E1E1E;
+}
+
+#Brand {
+    text-align: left;
+    background: transparent;
+    border: none;
+    font-size: 15px;
+    font-weight: 600;
+    color: #EDEDED;
+    padding: 4px 8px;
+}
+
+#NavButton {
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: #B3B3B3;
+    font-size: 13px;
+}
+
+#NavButton:hover {
+    background-color: #1E1E1E;
+    color: #FFFFFF;
+}
+
+#NavButton:checked {
+    background-color: #2A2A2A;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+
+/* --- Pages --- */
+#PageTitle {
+    font-size: 28px;
+    font-weight: 700;
+    color: #FFFFFF;
+}
+
+#PageSubtitle {
+    font-size: 13px;
+    color: #8C8C8C;
+}
+
+#SearchBox {
+    background-color: #1E1E1E;
+    border: 1px solid #2A2A2A;
+    border-radius: 8px;
+    padding: 8px 12px;
+    color: #EDEDED;
+    font-size: 13px;
+}
+
+/* --- Player bar --- */
+#PlayerBar {
+    background-color: #0A0A0A;
+    border-top: 1px solid #1E1E1E;
+}
+
+#PlayerArt {
+    background-color: #2A2A2A;
+    border-radius: 6px;
+}
+
+#PlayerTitle {
+    font-size: 13px;
+    font-weight: 600;
+    color: #FFFFFF;
+}
+
+#PlayerArtist {
+    font-size: 12px;
+    color: #8C8C8C;
+}
+
+#TimeLabel {
+    font-size: 11px;
+    color: #8C8C8C;
+}
+
+#TransportButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 18px;
+    color: #EDEDED;
+    font-size: 14px;
+}
+
+#TransportButton:enabled:hover {
+    background-color: #2A2A2A;
+}
+
+#TransportButton:disabled {
+    color: #4A4A4A;
+}
+
+#FavoriteButton {
+    background-color: transparent;
+    border: none;
+    border-radius: 16px;
+    color: #EDEDED;
+    font-size: 16px;
+}
+
+#FavoriteButton:enabled:hover {
+    background-color: #2A2A2A;
+}
+
+#FavoriteButton:checked {
+    color: #E0455F;
+}
+
+#FavoriteButton:disabled {
+    color: #4A4A4A;
+}
+
+#SecondaryButton {
+    background-color: #1E1E1E;
+    border: 1px solid #2A2A2A;
+    border-radius: 8px;
+    padding: 6px 14px;
+    color: #EDEDED;
+}
+
+#SecondaryButton:hover {
+    background-color: #2A2A2A;
+}
+
+#LibraryTable, #PlaylistList, #PlaylistTrackList {
+    background-color: #121212;
+    border: 1px solid #1E1E1E;
+    border-radius: 8px;
+    gridline-color: #1E1E1E;
+    color: #EDEDED;
+}
+
+#LibraryTable QHeaderView::section {
+    background-color: #1A1A1A;
+    color: #8C8C8C;
+    border: none;
+    padding: 6px;
+}
+
+#LibraryTable::item:selected, #PlaylistList::item:selected, #PlaylistTrackList::item:selected {
+    background-color: #2A2A2A;
+}
+
+/* --- Home page --- */
+#SectionHeading {
+    font-size: 18px;
+    font-weight: 600;
+    color: #FFFFFF;
+}
+
+#HomeScroll {
+    background: transparent;
+    border: none;
+}
+
+#CardArt {
+    background-color: #1E1E1E;
+    border-radius: 8px;
+    font-size: 32px;
+    color: #4A4A4A;
+}
+
+#CardTitle {
+    font-size: 12px;
+    font-weight: 600;
+    color: #EDEDED;
+}
+
+#CardArtist {
+    font-size: 11px;
+    color: #8C8C8C;
+}
+
+QSlider::groove:horizontal {
+    height: 4px;
+    background: #2A2A2A;
+    border-radius: 2px;
+}
+
+QSlider::handle:horizontal {
+    background: #EDEDED;
+    width: 10px;
+    height: 10px;
+    margin: -4px 0;
+    border-radius: 5px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #EDEDED;
+    border-radius: 2px;
+}
+
+QSlider::handle:horizontal:disabled,
+QSlider::sub-page:horizontal:disabled {
+    background: #3A3A3A;
+}
+
+/* --- Lyrics page --- */
+#LyricsScroll {
+    background: transparent;
+    border: none;
+}
+
+#LyricsLine {
+    font-size: 15px;
+    color: #6E6E6E;
+    padding: 2px 0;
+}
+
+#LyricsLineActive {
+    font-size: 17px;
+    font-weight: 600;
+    color: #FFFFFF;
+    padding: 2px 0;
+}
+
+#LyricsPlain {
+    font-size: 14px;
+    color: #EDEDED;
+}
