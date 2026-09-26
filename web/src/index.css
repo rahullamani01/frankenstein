@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+  --font-serif: 'Newsreader', Georgia, serif;
+  --color-bg-base: #F7F8F3;
+  --color-sidebar-base: #EEF1EA;
+  --color-hover-selected: #E3E9DC;
+  --color-text-main: #24302A;
+  --color-text-muted: #78837A;
+  --color-accent-green: #6E9662;
+  --color-border-muted: #E2E6DD;
+}
+
+:root {
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #F7F8F3;
+  color: #24302A;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Serif font strictly for album title on album page and lyrics/album title in Now Playing */
+.font-serif-custom {
+  font-family: var(--font-serif);
+}
+
+/* Custom minimal scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D9DFD5;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #CBD2C6;
+}
+
+/* CD Disc Continuous Rotation */
+@keyframes cd-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+

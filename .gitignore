@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment variables
+.env
+.env.*
+
+# Node
+node_modules/
+web/node_modules/
+
+# Vite build
+web/dist/
+
+# macOS
+.DS_Store
+
+# Python tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/

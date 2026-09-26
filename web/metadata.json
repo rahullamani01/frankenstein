@@ -1,0 +1,6 @@
+{
+  "name": "Frankenstein",
+  "description": "A calm, offline macOS desktop music player inspired by Things 3 and Apple Notes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
