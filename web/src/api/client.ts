@@ -1,13 +1,14 @@
 /**
  * Thin client for the local Frankenstein FastAPI backend.
- * Default base: http://127.0.0.1:8765
+ * Uses the same-origin Vite proxy unless an API base is configured.
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8765";
+const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
+    signal: init?.signal || AbortSignal.timeout(15000),
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers || {}),
@@ -65,6 +66,14 @@ export type NowPlaying = {
   id?: string;
 };
 
+export type LyricsResult = {
+  synced: [number, string][] | null;
+  plain: string | null;
+  instrumental?: boolean;
+  provider?: string;
+  providerUrl?: string;
+};
+
 function absolutizeCover(track: ApiTrack): ApiTrack {
   if (track.coverUrl && track.coverUrl.startsWith("/")) {
     return { ...track, coverUrl: `${API_BASE}${track.coverUrl}` };
@@ -115,6 +124,15 @@ export const api = {
     ),
 
   streamUrl: (trackId: string) => `${API_BASE}/api/stream/${trackId}`,
+  lyrics: (trackId: string, signal?: AbortSignal) =>
+    request<LyricsResult>(
+      `/api/tracks/${encodeURIComponent(trackId)}/lyrics`, { signal }
+    ),
+  catalogLyrics: (track: { title: string; artist: string; primaryArtist?: string; album: string; durationSec: number }, signal?: AbortSignal) =>
+    request<LyricsResult>(`/api/lyrics?${new URLSearchParams({
+      title: track.title, artist: track.primaryArtist || track.artist,
+      album: track.album, duration: String(track.durationSec || 0),
+    })}`, { signal }),
 
   // Spotify
   spotifyStatus: () =>

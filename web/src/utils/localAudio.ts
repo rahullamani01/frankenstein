@@ -16,23 +16,25 @@ class LocalAudioPlayer {
     return this.audio;
   }
 
-  playUrl(url: string) {
+  async playUrl(url: string) {
     const a = this.ensure();
     a.pause();
     a.src = url;
     a.currentTime = 0;
     a.volume = this.volume;
-    void a.play().catch(() => {
-      /* autoplay policy — user gesture already happened on click */
-    });
+    await a.play();
   }
 
   pause() {
     this.audio?.pause();
   }
 
-  resume() {
-    void this.audio?.play().catch(() => {});
+  async resume() {
+    await this.audio?.play();
+  }
+
+  get hasSource(): boolean {
+    return !!this.audio?.getAttribute('src');
   }
 
   stop() {
