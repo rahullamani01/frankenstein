@@ -6,6 +6,8 @@ import {
   Heart,
   Clock,
   ListMusic,
+  Moon,
+  Sun,
 } from 'lucide-react';
 
 export type ScreenId =
@@ -25,14 +27,18 @@ interface SidebarProps {
   currentScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
   selectedSource?: string | null;
+  darkMode: boolean;
+  onToggleTheme: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentScreen,
   onNavigate,
+  darkMode,
+  onToggleTheme,
 }) => {
   const mainNavItems = [
-    { id: 'home' as ScreenId, label: 'Home', icon: Compass },
+    { id: 'home' as ScreenId, label: 'Gallery', icon: Compass },
     { id: 'search' as ScreenId, label: 'Search', icon: Search },
     { id: 'library' as ScreenId, label: 'Library', icon: FolderOpen },
     { id: 'favorites' as ScreenId, label: 'Favorites', icon: Heart },
@@ -41,31 +47,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const sourceItems = [
-    { id: 'source-local' as ScreenId, label: 'Local' },
-    { id: 'source-apple' as ScreenId, label: 'Apple Music' },
-    { id: 'source-spotify' as ScreenId, label: 'Spotify' },
+    { id: 'source-local' as ScreenId, label: 'Local', tone: 'local' },
+    { id: 'source-apple' as ScreenId, label: 'Apple Music', tone: 'apple' },
+    { id: 'source-spotify' as ScreenId, label: 'Spotify', tone: 'spotify' },
   ];
 
   return (
-    <aside
-      id="app-sidebar"
-      className="w-[240px] flex-shrink-0 bg-[#EEF1EA] h-full flex flex-col justify-between border-r border-[#E2E6DD] select-none text-[13px]"
-    >
-      <div className="flex flex-col">
-        {/* macOS Window Controls & Header */}
-        <div className="pt-4 pb-3 px-5 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className="w-3 h-3 rounded-full bg-[#EC6A5E] border border-black/5 inline-block opacity-90" />
-            <span className="w-3 h-3 rounded-full bg-[#F4BF4F] border border-black/5 inline-block opacity-90" />
-            <span className="w-3 h-3 rounded-full bg-[#61C554] border border-black/5 inline-block opacity-90" />
+    <aside id="app-sidebar" className="pixel-sidebar" aria-label="Main navigation">
+      <div className="flex flex-col min-h-0">
+        <div className="pixel-window-bar">
+          <div className="pixel-dots" aria-hidden="true">
+            <span className="pixel-dot is-red" />
+            <span className="pixel-dot is-yellow" />
+            <span className="pixel-dot is-green" />
           </div>
-          <span className="text-[12px] font-medium tracking-tight text-[#78837A] font-sans">
-            Frankenstein
-          </span>
+          <span>offline gallery</span>
         </div>
 
-        {/* Primary Navigation */}
-        <nav className="px-3 pt-2 space-y-0.5" aria-label="Main Navigation">
+        <div className="pixel-brand">
+          <div className="px-mark" aria-hidden="true" />
+          <div className="pixel-brand-copy">
+            <strong>Frankenstein</strong>
+            <span>pixel listening gallery</span>
+          </div>
+        </div>
+
+        <nav className="pixel-nav" aria-label="Galleries">
           {mainNavItems.map((item) => {
             const Icon = item.icon;
             const isSelected = currentScreen === item.id;
@@ -74,31 +81,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 key={item.id}
                 id={`nav-${item.id}`}
                 onClick={() => onNavigate(item.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-left transition-colors font-normal ${
-                  isSelected
-                    ? 'bg-[#E3E9DC] text-[#24302A] font-medium'
-                    : 'text-[#24302A] hover:bg-[#E8ECE1]'
-                }`}
+                className={`pixel-nav-btn ${isSelected ? 'is-active' : ''}`}
+                title={item.label}
               >
                 <Icon
                   size={15}
-                  strokeWidth={1.5}
-                  className={isSelected ? 'text-[#6E9662]' : 'text-[#78837A]'}
+                  strokeWidth={1.7}
+                  className="px-nav-icon"
                 />
-                <span className="tracking-tight">{item.label}</span>
+                <span>{item.label}</span>
               </button>
             );
           })}
         </nav>
 
-        {/* Subtle Divider */}
-        <div className="mx-4 my-3 border-t border-[#E2E6DD]" />
+        <div className="pixel-nav-sep" aria-hidden="true" />
+        <div className="pixel-nav-label">Sources</div>
 
-        {/* Sources Section: Plain text rows with small dot, no logo icons */}
-        <div className="px-3 space-y-0.5">
-          <div className="px-3 py-1 text-[11px] font-medium text-[#78837A] tracking-wider uppercase">
-            Sources
-          </div>
+        <div className="pixel-nav" aria-label="Sources">
           {sourceItems.map((source) => {
             const isSelected = currentScreen === source.id;
             return (
@@ -106,28 +106,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 key={source.id}
                 id={`nav-${source.id}`}
                 onClick={() => onNavigate(source.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-left transition-colors font-normal ${
-                  isSelected
-                    ? 'bg-[#E3E9DC] text-[#24302A] font-medium'
-                    : 'text-[#24302A] hover:bg-[#E8ECE1]'
-                }`}
+                className={`pixel-nav-btn ${isSelected ? 'is-active' : ''}`}
+                title={source.label}
               >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    isSelected ? 'bg-[#6E9662]' : 'bg-[#A3ADA5]'
-                  }`}
-                />
-                <span className="tracking-tight">{source.label}</span>
+                <span className={`pixel-source-dot is-${source.tone}`} aria-hidden="true" />
+                <span>{source.label}</span>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Offline Desktop Status Tag (Calm, Things 3 style) */}
-      <div className="px-5 py-4 border-t border-[#E2E6DD] flex items-center justify-between text-[11px] text-[#78837A]">
-        <span>Offline library</span>
-        <span className="font-mono text-[10px] text-[#78837A]/80">macOS</span>
+      <div className="pixel-sidebar-foot">
+        <span>made for listening</span>
+        <button
+          onClick={onToggleTheme}
+          className="px-switch"
+          aria-label={darkMode ? 'Switch to day gallery' : 'Switch to night gallery'}
+          title={darkMode ? 'Day gallery' : 'Night gallery'}
+        >
+          {darkMode ? <Sun size={12} strokeWidth={1.8} /> : <Moon size={12} strokeWidth={1.8} />}
+          <span>{darkMode ? 'Day' : 'Night'}</span>
+        </button>
       </div>
     </aside>
   );
