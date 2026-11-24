@@ -1,11 +1,14 @@
 import React from 'react';
 import {
-  Compass,
+  Images,
   Search,
   FolderOpen,
   Heart,
   Clock,
   ListMusic,
+  HardDrive,
+  Music2,
+  Radio,
   Moon,
   Sun,
 } from 'lucide-react';
@@ -38,7 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleTheme,
 }) => {
   const mainNavItems = [
-    { id: 'home' as ScreenId, label: 'Gallery', icon: Compass },
+    { id: 'home' as ScreenId, label: 'Gallery', icon: Images },
     { id: 'search' as ScreenId, label: 'Search', icon: Search },
     { id: 'library' as ScreenId, label: 'Library', icon: FolderOpen },
     { id: 'favorites' as ScreenId, label: 'Favorites', icon: Heart },
@@ -47,9 +50,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const sourceItems = [
-    { id: 'source-local' as ScreenId, label: 'Local', tone: 'local' },
-    { id: 'source-apple' as ScreenId, label: 'Apple Music', tone: 'apple' },
-    { id: 'source-spotify' as ScreenId, label: 'Spotify', tone: 'spotify' },
+    { id: 'source-local' as ScreenId, label: 'Local', tone: 'local', icon: HardDrive },
+    { id: 'source-apple' as ScreenId, label: 'Apple Music', tone: 'apple', icon: Music2 },
+    { id: 'source-spotify' as ScreenId, label: 'Spotify', tone: 'spotify', icon: Radio },
   ];
 
   return (
@@ -83,6 +86,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 onClick={() => onNavigate(item.id)}
                 className={`pixel-nav-btn ${isSelected ? 'is-active' : ''}`}
                 title={item.label}
+                aria-label={item.label}
+                aria-current={isSelected ? 'page' : undefined}
               >
                 <Icon
                   size={15}
@@ -101,6 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="pixel-nav" aria-label="Sources">
           {sourceItems.map((source) => {
             const isSelected = currentScreen === source.id;
+            const Icon = source.icon;
             return (
               <button
                 key={source.id}
@@ -108,8 +114,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 onClick={() => onNavigate(source.id)}
                 className={`pixel-nav-btn ${isSelected ? 'is-active' : ''}`}
                 title={source.label}
+                aria-label={source.label}
+                aria-current={isSelected ? 'page' : undefined}
               >
-                <span className={`pixel-source-dot is-${source.tone}`} aria-hidden="true" />
+                <Icon
+                  size={15}
+                  strokeWidth={1.7}
+                  className={`px-nav-icon px-source-icon is-${source.tone}`}
+                  aria-hidden="true"
+                />
                 <span>{source.label}</span>
               </button>
             );

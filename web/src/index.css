@@ -420,15 +420,14 @@ body, #app-root, #app-main-content, .pixel-sidebar, .pixel-player,
   color: var(--muted);
 }
 
-.pixel-source-dot {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border: 1px solid var(--ink);
-}
-.pixel-source-dot.is-local { background: var(--moss); }
-.pixel-source-dot.is-apple { background: var(--peach); }
-.pixel-source-dot.is-spotify { background: var(--sky); }
+.pixel-source-icon.is-local { color: var(--moss-deep); }
+.pixel-source-icon.is-apple { color: #b5795b; }
+.pixel-source-icon.is-spotify { color: #4f8b7c; }
+[data-theme="dark"] .pixel-source-icon.is-local { color: var(--moss); }
+[data-theme="dark"] .pixel-source-icon.is-apple { color: var(--peach); }
+[data-theme="dark"] .pixel-source-icon.is-spotify { color: var(--sky); }
+.pixel-nav-btn.is-active .px-source-icon { color: var(--moss-deep); }
+[data-theme="dark"] .pixel-nav-btn.is-active .px-source-icon { color: var(--ink); }
 
 .pixel-sidebar-foot {
   margin: 14px;
@@ -2084,9 +2083,6 @@ body, #app-root, #app-main-content, .pixel-sidebar, .pixel-player,
   .pixel-nav-label {
     display: none;
   }
-  .pixel-nav-btn .pixel-source-dot {
-    display: inline-block;
-  }
   .pixel-nav-btn {
     justify-content: center;
     padding: 9px;
@@ -2126,13 +2122,23 @@ body, #app-root, #app-main-content, .pixel-sidebar, .pixel-player,
   }
   .gallery-stats {
     grid-template-columns: repeat(2, 1fr);
+    padding: 18px 0;
   }
-  .gallery-stat:nth-child(2) {
+  .gallery-stat {
+    padding: 0 18px;
+  }
+  .gallery-stat:nth-child(odd) {
+    padding-left: 0;
+  }
+  .gallery-stat:nth-child(even) {
     border-right: 0;
   }
-  .gallery-stat:nth-child(1),
-  .gallery-stat:nth-child(2) {
+  .gallery-stat:nth-child(-n + 2) {
+    padding-bottom: 16px;
     border-bottom: 1px dashed var(--line-strong);
+  }
+  .gallery-stat:nth-child(n + 3) {
+    padding-top: 16px;
   }
   .hero-title {
     font-size: 24px;
