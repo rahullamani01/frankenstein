@@ -21,7 +21,7 @@ from typing import List, Optional, Tuple, TypedDict
 
 from mutagen import File as MutagenFile
 
-LRC_LINE = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\](.*)")
+LRC_TIME = re.compile(r"\[(\d+):([0-5]?\d(?:\.\d{1,3})?)\]")
 
 
 class LyricsResult(TypedDict):
@@ -38,12 +38,18 @@ def _parse_lrc(text: str) -> Optional[List[Tuple[int, str]]]:
     """
     lines = []
     for raw_line in text.splitlines():
-        match = LRC_LINE.match(raw_line.strip())
-        if not match:
+        raw_line = raw_line.strip()
+        if not LRC_TIME.match(raw_line):
             continue
-        minutes, seconds, lyric = match.groups()
-        ms = int((float(minutes) * 60 + float(seconds)) * 1000)
-        lines.append((ms, lyric.strip()))
+        position = 0
+        timestamps = []
+        while match := LRC_TIME.match(raw_line, position):
+            minutes, seconds = match.groups()
+            timestamps.append(round((int(minutes) * 60 + float(seconds)) * 1000))
+            position = match.end()
+        lyric = raw_line[position:].strip()
+        for ms in timestamps:
+            lines.append((ms, lyric))
     if len(lines) < 2:
         return None
     lines.sort(key=lambda pair: pair[0])

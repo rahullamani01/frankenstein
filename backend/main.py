@@ -33,6 +33,8 @@ from core.database import Database  # noqa: E402
 from core.library_scanner import scan_folder  # noqa: E402
 from core.metadata import read_tags  # noqa: E402
 from core.artwork import extract_artwork  # noqa: E402
+from core.lyrics import extract_lyrics  # noqa: E402
+from core.catalog_lyrics import lookup_lyrics, LyricsUnavailable  # noqa: E402
 
 app = FastAPI(title="Frankenstein Local API", version="0.1.0")
 
@@ -113,6 +115,19 @@ def status():
 # ---------------------------------------------------------------------------
 
 
+@app.get("/api/lyrics")
+def catalog_lyrics(
+    title: str = Query(..., min_length=1, max_length=300),
+    artist: str = Query(..., min_length=1, max_length=300),
+    album: str = Query("", max_length=300),
+    duration: float = Query(0, ge=0, le=86400, allow_inf_nan=False),
+):
+    try:
+        return lookup_lyrics(title, artist, album, duration)
+    except LyricsUnavailable as error:
+        raise HTTPException(503, str(error), headers={"Retry-After": str(error.retry_after)}) from error
+
+
 @app.get("/api/tracks")
 def list_tracks(q: Optional[str] = None, source: Optional[str] = None):
     if q:
@@ -142,6 +157,14 @@ def toggle_favorite(track_id: int):
     new_val = not bool(row["is_favorite"])
     db.set_favorite(track_id, new_val)
     return {"id": track_id, "isFavorite": new_val}
+
+
+@app.get("/api/tracks/{track_id}/lyrics")
+def track_lyrics(track_id: int):
+    row = db.get_track(track_id)
+    if not row:
+        raise HTTPException(404, "Track not found")
+    return extract_lyrics(Path(row["path"]))
 
 
 @app.get("/api/albums")
