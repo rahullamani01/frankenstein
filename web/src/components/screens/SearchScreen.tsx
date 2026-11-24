@@ -1,7 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { Search as SearchIcon, Play, Loader2 } from 'lucide-react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Search as SearchIcon, Loader2 } from 'lucide-react';
 import { Track } from '../../data/musicData';
 import { api, ApiTrack } from '../../api/client';
+import { ScreenHeader, TrackRow, TrackTableHead, PixelChip, SourceTag } from '../pixel/ui';
+import { SpotifyConnection } from '../SpotifyConnection';
+import { spotify } from '../../services/spotify';
 
 interface AppleSearchResult {
   name: string;
@@ -13,6 +16,7 @@ interface SearchScreenProps {
   currentTrackId?: string;
   isPlaying: boolean;
   onPlayTrack: (track: Track) => void;
+  spotifyOnly?: boolean;
 }
 
 function mapApiTrack(track: ApiTrack): Track {
@@ -34,8 +38,6 @@ function mapApiTrack(track: ApiTrack): Track {
 
 function mapAppleTrack(track: AppleSearchResult, index: number): Track {
   return {
-    // Give Apple Music results their own stable-ish ID
-    // so they don't collide with local database IDs.
     id: `apple-search-${index}-${track.name}-${track.artist}`,
     title: track.name,
     artist: track.artist,
@@ -55,268 +57,231 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
   currentTrackId,
   isPlaying,
   onPlayTrack,
+  spotifyOnly = false,
 }) => {
+  const spotifyState = useSyncExternalStore(spotify.subscribe, spotify.getSnapshot);
   const [query, setQuery] = useState('');
-
   const [localResults, setLocalResults] = useState<Track[]>([]);
   const [appleResults, setAppleResults] = useState<Track[]>([]);
-
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [spotifyResults, setSpotifyResults] = useState<Track[]>([]);
+  const [spotifyError, setSpotifyError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const searchVersion = useRef(0);
+  const spotifyOffset = useRef(0);
 
   useEffect(() => {
     const q = query.trim();
-
+    const version = ++searchVersion.current;
+    setLocalResults([]);
+    setAppleResults([]);
+    setSpotifyResults([]);
+    setSearchError(null);
+    setSpotifyError(null);
+    setHasMore(false);
+    setLoadingMore(false);
+    spotifyOffset.current = 0;
     if (!q) {
-      setLocalResults([]);
-      setAppleResults([]);
-      setSearchError(null);
       setIsSearching(false);
       return;
     }
 
     let cancelled = false;
+    const abort = new AbortController();
+    setIsSearching(true);
 
     const timer = window.setTimeout(async () => {
-      setIsSearching(true);
-      setSearchError(null);
-
-      const [localResult, appleResult] = await Promise.allSettled([
-        api.tracks(q),
-        api.appleSearch(q),
-      ]);
-
-      if (cancelled) return;
-
-      let local: Track[] = [];
-      let apple: Track[] = [];
-
-      if (localResult.status === 'fulfilled') {
-        local = localResult.value.map(mapApiTrack);
+      const tasks: Promise<unknown>[] = [];
+      const active = () => !cancelled && version === searchVersion.current;
+      if (spotifyState.connected) {
+        tasks.push(spotify.search(q, 0, abort.signal).then((result) => {
+          if (!active()) return;
+          setSpotifyResults(result.tracks);
+          spotifyOffset.current = 10;
+          setHasMore(result.hasMore);
+        }).catch((error) => {
+          if (active()) setSpotifyError(error instanceof Error ? error.message : 'Could not search Spotify.');
+        }));
       }
-
-      if (appleResult.status === 'fulfilled') {
-        apple = appleResult.value.map(mapAppleTrack);
+      if (!spotifyOnly) {
+        tasks.push(api.tracks(q).then((list) => {
+          if (active()) setLocalResults(list.map(mapApiTrack));
+        }).catch(() => {
+          if (active()) setSearchError('Local library unavailable. Spotify search still works when connected.');
+        }));
+        tasks.push(api.appleSearch(q).then((list) => {
+          if (active()) setAppleResults(list.map(mapAppleTrack));
+        }).catch(() => { /* Music.app library is optional; do not hide Spotify results. */ }));
       }
-
-      setLocalResults(local);
-      setAppleResults(apple);
-
-      if (
-        localResult.status === 'rejected' &&
-        appleResult.status === 'rejected'
-      ) {
-        setSearchError(
-          'Could not search the library. Make sure the Frankenstein backend is running.'
-        );
-      }
-
-      setIsSearching(false);
+      await Promise.allSettled(tasks);
+      if (active()) setIsSearching(false);
     }, 300);
 
     return () => {
       cancelled = true;
+      abort.abort();
       window.clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, spotifyState.connected, spotifyOnly]);
 
-  const results = [...localResults, ...appleResults];
+  const total = localResults.length + appleResults.length + spotifyResults.length;
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    const version = searchVersion.current;
+    setLoadingMore(true);
+    try {
+      const result = await spotify.search(query.trim(), spotifyOffset.current);
+      if (version !== searchVersion.current) return;
+      spotifyOffset.current += 10;
+      setSpotifyResults((previous) => [...previous, ...result.tracks.filter((track) => !previous.some((t) => t.id === track.id))]);
+      setHasMore(result.hasMore);
+    } catch (error) {
+      if (version === searchVersion.current) setSpotifyError(error instanceof Error ? error.message : 'Could not load more songs.');
+    } finally {
+      if (version === searchVersion.current) setLoadingMore(false);
+    }
+  };
 
   return (
-    <div
-      id="screen-search"
-      className="max-w-4xl mx-auto px-10 py-9 space-y-6"
-    >
-      {/* Search Input */}
-      <div className="relative">
-        <SearchIcon
-          size={16}
-          strokeWidth={1.5}
-          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#78837A]"
-        />
+    <div id="screen-search" className="screen-wrap">
+      <ScreenHeader
+        eyebrow="Find a piece"
+        title={spotifyOnly ? 'Spotify' : 'Search'}
+        subtitle="Search Spotify’s full catalogue, or find music from your own shelves."
+        actions={
+          query.trim() && !isSearching ? (
+            <PixelChip tone="moss">{total} found</PixelChip>
+          ) : null
+        }
+      />
 
+      <SpotifyConnection />
+
+      <div className="px-search">
+        <SearchIcon size={16} strokeWidth={1.8} className="px-search-icon" />
         <input
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search tracks, artists, albums"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search tracks, artists, albums…"
           autoFocus
-          className="w-full bg-[#EEF1EA] text-[#24302A] placeholder-[#78837A] text-[14px] pl-10 pr-10 py-2.5 rounded-[10px] border border-[#E2E6DD] focus:outline-none focus:border-[#CBD2C6] transition-colors"
+          aria-label="Search tracks, artists and albums"
         />
-
-        {isSearching && (
-          <Loader2
-            size={15}
-            className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#78837A] animate-spin"
-          />
-        )}
+        {isSearching ? (
+          <Loader2 size={15} className="px-search-spin" />
+        ) : null}
       </div>
 
-      {/* Empty state */}
       {!query.trim() && (
-        <div className="py-20 text-center">
-          <div className="text-[14px] text-[#24302A]">
-            Search your music
-          </div>
-
-          <div className="mt-2 text-[12px] text-[#78837A]">
-            Search your local library and Apple Music library
-          </div>
+        <div className="search-empty">
+          <span className="px-display block text-[17px]" style={{ color: 'var(--ink)' }}>
+            What shall we look at?
+          </span>
+          <p className="mx-auto mt-2 max-w-[42ch] text-[12px] leading-relaxed" style={{ color: 'var(--muted)' }}>
+            Connect Spotify above, then type a song or artist to hear full tracks with Premium.
+            {!spotifyOnly && ' Local files and your added Music.app library are searched too. Apple Music catalogue streaming is not connected yet.'}
+          </p>
         </div>
       )}
 
-      {/* Error */}
       {searchError && (
-        <div className="py-4 text-center text-[12px] text-[#9A625D]">
-          {searchError}
-        </div>
+        <p className="spotify-error" role="status">{searchError}</p>
       )}
 
-      {/* Results */}
-      {query.trim() && !searchError && (
-        <div className="space-y-4">
-          {/* Local results */}
+      {spotifyError && <p className="spotify-error" role="alert">{spotifyError}</p>}
+      {query.trim() && (
+        <div>
+          {spotifyResults.length > 0 && (
+            <section className="search-group">
+              <div className="search-group-head">
+                <SourceTag source="Spotify" />
+                <span className="px-label">Full songs · Premium</span>
+              </div>
+              <div className="px-table">
+                <TrackTableHead showFavorite={false} showSource={false} />
+                {spotifyResults.map((track, index) => (
+                  <TrackRow key={track.id} track={track} index={index}
+                    currentTrackId={currentTrackId} isPlaying={isPlaying}
+                    onPlayTrack={onPlayTrack} showFavorite={false} showSource={false} />
+                ))}
+              </div>
+              {hasMore && (
+                <button className="pixel-btn ghost small mt-4" disabled={loadingMore} onClick={() => void loadMore()}>
+                  {loadingMore ? 'Finding more…' : 'More Spotify songs'}
+                </button>
+              )}
+              <a className="spotify-attribution" href={`https://open.spotify.com/search/${encodeURIComponent(query.trim())}`}
+                target="_blank" rel="noreferrer">Search on Spotify ↗</a>
+            </section>
+          )}
+          {!spotifyState.connected && (
+            <p className="spotify-error">Spotify catalogue search needs sign-in. Click Connect Spotify above.</p>
+          )}
           {localResults.length > 0 && (
-            <section>
-              <div className="px-3 pb-2 text-[11px] font-medium text-[#78837A] uppercase tracking-wider">
-                Local
+            <section className="search-group">
+              <div className="search-group-head">
+                <SourceTag source="Local" />
+                <span className="px-label">from your shelves</span>
               </div>
-
-              <div className="space-y-1">
-                {localResults.map((track, idx) => (
-                  <SearchResultRow
+              <div className="px-table">
+                <TrackTableHead showFavorite={false} showSource={false} />
+                {localResults.map((track, index) => (
+                  <TrackRow
                     key={track.id}
                     track={track}
-                    index={idx}
+                    index={index}
                     currentTrackId={currentTrackId}
                     isPlaying={isPlaying}
                     onPlayTrack={onPlayTrack}
+                    showFavorite={false}
+                    showSource={false}
                   />
                 ))}
               </div>
             </section>
           )}
 
-          {/* Apple Music results */}
           {appleResults.length > 0 && (
-            <section>
-              <div className="px-3 pb-2 pt-2 text-[11px] font-medium text-[#78837A] uppercase tracking-wider">
-                Apple Music
+            <section className="search-group">
+              <div className="search-group-head">
+                <SourceTag source="Apple Music" />
+                <span className="px-label">Added to your Music.app library</span>
               </div>
-
-              <div className="space-y-1">
-                {appleResults.map((track, idx) => (
-                  <SearchResultRow
+              <div className="px-table">
+                <TrackTableHead showFavorite={false} showSource={false} />
+                {appleResults.map((track, index) => (
+                  <TrackRow
                     key={track.id}
                     track={track}
-                    index={idx}
+                    index={index}
                     currentTrackId={currentTrackId}
                     isPlaying={isPlaying}
                     onPlayTrack={onPlayTrack}
+                    showFavorite={false}
+                    showSource={false}
                   />
                 ))}
               </div>
             </section>
           )}
 
-          {/* Nothing found */}
-          {!isSearching &&
-            localResults.length === 0 &&
-            appleResults.length === 0 && (
-              <div className="py-16 text-center text-[13px] text-[#78837A]">
-                No results found for &ldquo;{query}&rdquo;
-              </div>
-            )}
+          {!isSearching && total === 0 && !spotifyError && !searchError && (
+            <div className="search-empty">
+              <span className="px-display block text-[16px]" style={{ color: 'var(--ink)' }}>
+                Nothing framed under “{query}”
+              </span>
+              <p className="mt-2 text-[12px]" style={{ color: 'var(--muted)' }}>
+                {spotifyState.connected
+                  ? 'Try a shorter title, or a different artist.'
+                  : 'Connect Spotify above to search beyond local files.'}
+              </p>
+            </div>
+          )}
         </div>
       )}
-    </div>
-  );
-};
-
-interface SearchResultRowProps {
-  track: Track;
-  index: number;
-  currentTrackId?: string;
-  isPlaying: boolean;
-  onPlayTrack: (track: Track) => void;
-}
-
-const SearchResultRow: React.FC<SearchResultRowProps> = ({
-  track,
-  index,
-  currentTrackId,
-  isPlaying,
-  onPlayTrack,
-}) => {
-  const isCurrent = currentTrackId === track.id;
-
-  return (
-    <div
-      onClick={() => onPlayTrack(track)}
-      className={`group px-3 py-2 rounded-[8px] flex items-center text-[13px] cursor-pointer transition-colors ${
-        isCurrent
-          ? 'bg-[#E3E9DC] text-[#24302A]'
-          : 'hover:bg-[#E8ECE1] text-[#24302A]'
-      }`}
-    >
-      {/* Number / Play */}
-      <div className="w-10 flex items-center">
-        <span className="group-hover:hidden text-[12px] text-[#78837A] font-mono tabular-nums">
-          {index + 1}
-        </span>
-
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onPlayTrack(track);
-          }}
-          className="hidden group-hover:flex w-5 h-5 items-center justify-center text-[#24302A]"
-          title="Play"
-        >
-          <Play size={12} strokeWidth={2} />
-        </button>
-      </div>
-
-      {/* Artwork + Title */}
-      <div className="flex-1 min-w-0 flex items-center gap-3 pr-4">
-        {track.coverUrl ? (
-          <img
-            src={track.coverUrl}
-            alt={track.album}
-            className="w-8 h-8 rounded-[6px] object-cover flex-shrink-0 border border-black/5"
-          />
-        ) : (
-          <div className="w-8 h-8 rounded-[6px] flex-shrink-0 bg-[#DDE6D6] border border-black/5 flex items-center justify-center text-[11px] text-[#6E9662]">
-            ♪
-          </div>
-        )}
-
-        <span
-          className={`truncate font-medium ${
-            isCurrent && isPlaying
-              ? 'text-[#6E9662]'
-              : 'text-[#24302A]'
-          }`}
-        >
-          {track.title}
-        </span>
-      </div>
-
-      {/* Artist */}
-      <div className="w-44 text-[#78837A] truncate pr-4 text-[12px]">
-        {track.artist}
-      </div>
-
-      {/* Album */}
-      <div className="w-48 text-[#78837A] truncate pr-4 text-[12px]">
-        {track.album}
-      </div>
-
-      {/* Source */}
-      <div className="w-24 text-right text-[12px] text-[#78837A]">
-        {track.source}
-      </div>
     </div>
   );
 };

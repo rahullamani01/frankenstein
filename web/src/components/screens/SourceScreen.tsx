@@ -1,6 +1,7 @@
 import React from 'react';
-import { Play, Heart } from 'lucide-react';
 import { Track } from '../../data/musicData';
+import { ScreenHeader, TrackRow, TrackTableHead, EmptyGallery, PixelChip } from '../pixel/ui';
+import { SearchScreen } from './SearchScreen';
 
 interface SourceScreenProps {
   sourceName: 'Local' | 'Apple Music' | 'Spotify';
@@ -11,6 +12,24 @@ interface SourceScreenProps {
   onToggleFavorite: (trackId: string) => void;
 }
 
+const sourceCopy: Record<SourceScreenProps['sourceName'], { eyebrow: string; body: string; tone: 'moss' | 'peach' | 'sky' }> = {
+  Local: {
+    eyebrow: 'From the shelves',
+    body: 'Your own files, streamed straight from the little server on this Mac. No account needed.',
+    tone: 'moss',
+  },
+  'Apple Music': {
+    eyebrow: 'Conducted by Music.app',
+    body: 'Playback is handed to the desktop Music app while the gallery keeps the controls and the view.',
+    tone: 'peach',
+  },
+  Spotify: {
+    eyebrow: 'Conducted by Spotify',
+    body: 'Playback is handed to the desktop Spotify app while the gallery keeps the controls and the view.',
+    tone: 'sky',
+  },
+};
+
 export const SourceScreen: React.FC<SourceScreenProps> = ({
   sourceName,
   tracks,
@@ -19,103 +38,56 @@ export const SourceScreen: React.FC<SourceScreenProps> = ({
   onPlayTrack,
   onToggleFavorite,
 }) => {
-  const sourceTracks = tracks.filter((t) => t.source === sourceName);
+  const sourceTracks = tracks.filter((track) => track.source === sourceName);
+  const copy = sourceCopy[sourceName];
+  if (sourceName === 'Spotify') {
+    return <SearchScreen spotifyOnly currentTrackId={currentTrackId} isPlaying={isPlaying} onPlayTrack={onPlayTrack} />;
+  }
 
   return (
-    <div id="screen-source" className="max-w-4xl mx-auto px-10 py-9 space-y-6">
-      <div className="border-b border-[#E2E6DD] pb-4">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-[#6E9662]" />
-          <h1 className="text-[24px] font-semibold text-[#24302A] tracking-tight">
+    <div id="screen-source" className="screen-wrap">
+      <ScreenHeader
+        eyebrow={copy.eyebrow}
+        title={sourceName}
+        subtitle={`${sourceTracks.length} ${sourceTracks.length === 1 ? 'track is' : 'tracks are'} indexed from this source.`}
+        actions={
+          <PixelChip tone={copy.tone}>
+            <span className={`pixel-source-dot is-${sourceName === 'Apple Music' ? 'apple' : 'local'}`} />
             {sourceName}
-          </h1>
-        </div>
-        <p className="text-[13px] text-[#78837A] mt-1">
-          {sourceTracks.length} {sourceTracks.length === 1 ? 'track' : 'tracks'} indexed
-        </p>
-      </div>
+          </PixelChip>
+        }
+      />
 
-      <div className="space-y-1">
-        <div className="px-3 py-1.5 flex items-center text-[11px] font-medium text-[#78837A] uppercase tracking-wider border-b border-[#E2E6DD]/70">
-          <span className="w-8">#</span>
-          <span className="flex-1">Title</span>
-          <span className="w-40">Artist</span>
-          <span className="w-44">Album</span>
-          <span className="w-16 text-right">Time</span>
-          <span className="w-10 text-right"></span>
-        </div>
+      <p className="mb-5 max-w-[58ch] text-[12px] leading-relaxed" style={{ color: 'var(--muted)' }}>
+        {copy.body}
+      </p>
 
-        {sourceTracks.map((track, idx) => {
-          const isCurrent = currentTrackId === track.id;
-          return (
-            <div
+      {sourceTracks.length === 0 ? (
+        <EmptyGallery
+          title={`Nothing from ${sourceName} yet`}
+          body={
+            sourceName === 'Local'
+              ? 'Scan a folder from the backend to bring your own files into the gallery.'
+              : `Open ${sourceName} on this Mac and search for something; the desktop app will take over playback.`
+          }
+        />
+      ) : (
+        <div className="px-table">
+          <TrackTableHead showSource={false} />
+          {sourceTracks.map((track, index) => (
+            <TrackRow
               key={track.id}
-              onClick={() => onPlayTrack(track)}
-              className={`group px-3 py-2 rounded-[8px] flex items-center text-[13px] cursor-pointer transition-colors ${
-                isCurrent
-                  ? 'bg-[#E3E9DC] text-[#24302A]'
-                  : 'hover:bg-[#E8ECE1] text-[#24302A]'
-              }`}
-            >
-              <div className="w-8 flex items-center">
-                <span className="group-hover:hidden text-[12px] text-[#78837A] font-mono tabular-nums">
-                  {idx + 1}
-                </span>
-                <button
-                  className="hidden group-hover:flex w-5 h-5 items-center justify-center text-[#24302A]"
-                  title="Play"
-                >
-                  <Play size={12} strokeWidth={2} />
-                </button>
-              </div>
-
-              <div className="flex-1 min-w-0 flex items-center gap-3 pr-4">
-                <img
-                  src={track.coverUrl}
-                  alt={track.album}
-                  className="w-8 h-8 rounded-[6px] object-cover flex-shrink-0 border border-black/5"
-                />
-                <span
-                  className={`truncate font-medium ${
-                    isCurrent && isPlaying ? 'text-[#6E9662]' : 'text-[#24302A]'
-                  }`}
-                >
-                  {track.title}
-                </span>
-              </div>
-
-              <div className="w-40 text-[#78837A] truncate pr-4 text-[12px]">
-                {track.artist}
-              </div>
-
-              <div className="w-44 text-[#78837A] truncate pr-4 text-[12px]">
-                {track.album}
-              </div>
-
-              <div className="w-16 text-right text-[12px] text-[#78837A] font-mono tabular-nums">
-                {track.duration}
-              </div>
-
-              <div className="w-10 flex justify-end">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleFavorite(track.id);
-                  }}
-                  className="p-1 text-[#78837A] hover:text-[#24302A] transition-colors"
-                  title={track.isFavorite ? 'Remove favorite' : 'Add favorite'}
-                >
-                  <Heart
-                    size={14}
-                    strokeWidth={1.5}
-                    className={track.isFavorite ? 'text-[#6E9662]' : 'text-[#78837A]/50 group-hover:text-[#78837A]'}
-                  />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              track={track}
+              index={index}
+              currentTrackId={currentTrackId}
+              isPlaying={isPlaying}
+              onPlayTrack={onPlayTrack}
+              onToggleFavorite={onToggleFavorite}
+              showSource={false}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 };

@@ -1,12 +1,17 @@
 import React from 'react';
-import { ArrowLeft, Play, Pause, Heart } from 'lucide-react';
+import { ArrowLeft, Play, Pause } from 'lucide-react';
 import { Album, Track } from '../../data/musicData';
+import { PixelArt } from '../pixel/PixelArt';
+import { LivingScene } from '../pixel/LivingScene';
+import { PixelFrame, PixelChip, SourceTag, TrackRow, TrackTableHead } from '../pixel/ui';
+import { frameToneFor, sceneFor } from '../../theme/pixel';
 
 interface AlbumViewScreenProps {
   album: Album;
   albumTracks: Track[];
   currentTrackId?: string;
   isPlaying: boolean;
+  darkMode: boolean;
   onBack: () => void;
   onPlayTrack: (track: Track) => void;
   onPlayAlbum: () => void;
@@ -18,150 +23,129 @@ export const AlbumViewScreen: React.FC<AlbumViewScreenProps> = ({
   albumTracks,
   currentTrackId,
   isPlaying,
+  darkMode,
   onBack,
   onPlayTrack,
   onPlayAlbum,
   onToggleFavorite,
 }) => {
-  const isAlbumPlaying = isPlaying && albumTracks.some((t) => t.id === currentTrackId);
+  const isAlbumPlaying = isPlaying && albumTracks.some((track) => track.id === currentTrackId);
+  const seed = album.id || album.title;
 
   return (
-    <div id="screen-album-view" className="max-w-4xl mx-auto px-10 py-8 space-y-8">
-      {/* Navigation Back */}
-      <div>
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-[13px] text-[#78837A] hover:text-[#24302A] transition-colors group"
-        >
-          <ArrowLeft size={15} strokeWidth={1.5} className="group-hover:-translate-x-0.5 transition-transform" />
-          <span>Back</span>
+    <div id="screen-album-view" className="screen-wrap">
+      <div className="mb-4">
+        <button onClick={onBack} className="pixel-btn ghost small">
+          <ArrowLeft size={13} strokeWidth={2} />
+          <span>Back to the room</span>
         </button>
       </div>
 
-      {/* Album Header: Large art left, title (serif) + artist + year right */}
-      <div className="flex items-end gap-7">
-        <div className="w-[180px] h-[180px] rounded-[10px] overflow-hidden bg-[#EEF1EA] border border-[#E2E6DD] flex-shrink-0 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
-          <img
-            src={album.coverUrl}
-            alt={album.title}
-            className="w-full h-full object-cover"
-          />
+      <div className="album-banner">
+        <LivingScene
+          seed={seed}
+          variant={sceneFor(seed, 1)}
+          night={darkMode}
+          playing={isPlaying}
+          interactive={false}
+          notes={false}
+          label="A quiet pixel view behind the album"
+        />
+        <div className="album-banner-veil" aria-hidden="true" />
+        <div className="album-banner-copy">
+          <PixelChip tone="paper">Now viewing</PixelChip>
+          <span className="px-label">Album · {album.year || 'undated'}</span>
+        </div>
+      </div>
+
+      <div className="album-head">
+        <div className="album-art">
+          <PixelFrame
+            tone={frameToneFor(seed)}
+            plaque={
+              <span className="piece-plaque">
+                <span className="piece-plaque-copy">
+                  <strong>{album.title}</strong>
+                  <span>{album.artist}</span>
+                </span>
+                <span className="piece-year">{album.year || '—'}</span>
+              </span>
+            }
+          >
+            <div className="piece-art">
+              <PixelArt
+                original={album.source === 'Spotify'}
+                src={album.coverUrl}
+                seed={seed}
+                alt={`${album.title} by ${album.artist}`}
+                grid={56}
+              />
+            </div>
+          </PixelFrame>
         </div>
 
-        <div className="space-y-2 flex-1 min-w-0 pb-1">
-          {/* Strict typography: Newsreader serif ONLY for album title on the album page */}
-          <h1 className="font-serif-custom text-[32px] text-[#24302A] leading-tight tracking-normal font-normal">
-            {album.title}
-          </h1>
-
-          <div className="flex items-center gap-2 text-[14px] text-[#78837A]">
-            <span className="font-medium text-[#24302A]">{album.artist}</span>
-            <span>&bull;</span>
-            <span>{album.year}</span>
-            <span>&bull;</span>
-            <span>{album.source}</span>
+        <div className="album-copy">
+          <span className="px-label">Album on view</span>
+          <h1 className="album-title">{album.title}</h1>
+          <div className="album-meta">
+            <b>{album.artist}</b>
+            <span>·</span>
+            <span>{album.year || '—'}</span>
+            <span>·</span>
+            <SourceTag source={album.source} />
           </div>
-
-          <div className="pt-2 flex items-center gap-3">
-            <button
-              onClick={onPlayAlbum}
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#6E9662] text-white text-[13px] font-medium hover:opacity-90 transition-opacity"
-            >
+          <div className="album-actions">
+            <button onClick={onPlayAlbum} className="pixel-btn">
               {isAlbumPlaying ? (
                 <>
-                  <Pause size={14} strokeWidth={2} />
-                  <span>Pause</span>
+                  <Pause size={12} strokeWidth={2.2} />
+                  Playing
                 </>
               ) : (
                 <>
-                  <Play size={14} strokeWidth={2} className="ml-0.5" />
-                  <span>Play</span>
+                  <Play size={12} strokeWidth={2.4} />
+                  Play album
                 </>
               )}
             </button>
-            <span className="text-[12px] text-[#78837A]">
-              {albumTracks.length} tracks
-            </span>
+            <PixelChip tone="moss">
+              {albumTracks.length} {albumTracks.length === 1 ? 'track' : 'tracks'}
+            </PixelChip>
+            <PixelChip tone="lilac">listening room</PixelChip>
           </div>
         </div>
       </div>
 
-      {/* Plain numbered track list below */}
-      <div className="border-t border-[#E2E6DD] pt-4 space-y-1">
-        <div className="px-3 py-1.5 flex items-center text-[11px] font-medium text-[#78837A] uppercase tracking-wider">
-          <span className="w-10">#</span>
-          <span className="flex-1">Title</span>
-          <span className="w-20 text-right">Time</span>
-          <span className="w-24 text-right">Source</span>
-          <span className="w-10 text-right"></span>
+      <div className="album-tracks">
+        <div className="gallery-section-head">
+          <div>
+            <span className="px-label">Catalogue</span>
+            <h2>Inside the frame</h2>
+          </div>
+          <span className="px-count">{albumTracks.length} {albumTracks.length === 1 ? 'work' : 'works'}</span>
         </div>
 
-        {albumTracks.map((track) => {
-          const isCurrent = currentTrackId === track.id;
-          return (
-            <div
-              key={track.id}
-              onClick={() => onPlayTrack(track)}
-              className={`group px-3 py-2 rounded-[8px] flex items-center text-[13px] cursor-pointer transition-colors ${
-                isCurrent
-                  ? 'bg-[#E3E9DC] text-[#24302A]'
-                  : 'hover:bg-[#E8ECE1] text-[#24302A]'
-              }`}
-            >
-              {/* Number or Play icon */}
-              <div className="w-10 flex items-center">
-                <span className="group-hover:hidden text-[12px] text-[#78837A] font-mono tabular-nums">
-                  {track.trackNumber}
-                </span>
-                <button
-                  className="hidden group-hover:flex w-5 h-5 items-center justify-center text-[#24302A]"
-                  title="Play track"
-                >
-                  <Play size={12} strokeWidth={2} />
-                </button>
-              </div>
-
-              {/* Title */}
-              <div className="flex-1 min-w-0 pr-4">
-                <span
-                  className={`truncate font-medium ${
-                    isCurrent && isPlaying ? 'text-[#6E9662]' : 'text-[#24302A]'
-                  }`}
-                >
-                  {track.title}
-                </span>
-              </div>
-
-              {/* Duration */}
-              <div className="w-20 text-right text-[12px] text-[#78837A] font-mono tabular-nums">
-                {track.duration}
-              </div>
-
-              {/* Source (plain text label) */}
-              <div className="w-24 text-right text-[12px] text-[#78837A]">
-                {track.source}
-              </div>
-
-              {/* Favorite */}
-              <div className="w-10 flex justify-end">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleFavorite(track.id);
-                  }}
-                  className="p-1 text-[#78837A] hover:text-[#24302A] transition-colors"
-                  title={track.isFavorite ? 'Remove favorite' : 'Add favorite'}
-                >
-                  <Heart
-                    size={14}
-                    strokeWidth={1.5}
-                    className={track.isFavorite ? 'text-[#6E9662]' : 'text-[#78837A]/50 group-hover:text-[#78837A]'}
-                  />
-                </button>
-              </div>
-            </div>
-          );
-        })}
+        {albumTracks.length === 0 ? (
+          <p className="text-[12px]" style={{ color: 'var(--muted)' }}>
+            This album has no indexed tracks yet.
+          </p>
+        ) : (
+          <div className="px-table">
+            <TrackTableHead showAlbum={false} />
+            {albumTracks.map((track, index) => (
+              <TrackRow
+                key={track.id}
+                track={track}
+                index={index}
+                currentTrackId={currentTrackId}
+                isPlaying={isPlaying}
+                onPlayTrack={onPlayTrack}
+                onToggleFavorite={onToggleFavorite}
+                showAlbum={false}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

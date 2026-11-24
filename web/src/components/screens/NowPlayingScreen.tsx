@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Play,
   Pause,
@@ -11,7 +11,11 @@ import {
   AlignLeft,
 } from 'lucide-react';
 import { Track } from '../../data/musicData';
-import { AcrylicCdPlayer } from '../AcrylicCdPlayer';
+import { PixelArt } from '../pixel/PixelArt';
+import { LivingScene } from '../pixel/LivingScene';
+import { PixelFrame, PixelEqualizer, PixelChip } from '../pixel/ui';
+import { api, LyricsResult } from '../../api/client';
+import { frameToneFor, sceneFor } from '../../theme/pixel';
 
 interface NowPlayingScreenProps {
   track: Track;
@@ -20,6 +24,7 @@ interface NowPlayingScreenProps {
   duration: number;
   volume: number;
   isFavorite: boolean;
+  darkMode: boolean;
   onClose: () => void;
   onTogglePlay: () => void;
   onNext: () => void;
@@ -36,6 +41,7 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
   duration,
   volume,
   isFavorite,
+  darkMode,
   onClose,
   onTogglePlay,
   onNext,
@@ -45,7 +51,73 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
   onToggleFavorite,
 }) => {
   const [showLyrics, setShowLyrics] = useState(false);
+  const [lyricsState, setLyricsState] = useState<{
+    key: string; result: LyricsResult | null; loading: boolean; error: string | null;
+  } | null>(null);
+  const [lyricsRetry, setLyricsRetry] = useState(0);
+  const [followLyrics, setFollowLyrics] = useState(true);
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const activeLyricRef = useRef<HTMLButtonElement>(null);
+  const lyricSheetRef = useRef<HTMLDivElement>(null);
+  const lyricKey = `${track.source}:${track.id}:${track.title}:${track.artist}:${track.album}:${track.durationSec}`;
+  const lyrics = lyricsState?.key === lyricKey ? lyricsState.result : null;
+  const lyricsLoading = showLyrics && (lyricsState?.key !== lyricKey || lyricsState.loading);
+  const lyricsError = lyricsState?.key === lyricKey ? lyricsState.error : null;
+
+  useEffect(() => {
+    if (!showLyrics) return;
+    if (!track.id || !track.title || !track.artist) {
+      setLyricsState({ key: lyricKey, result: null, loading: false, error: null });
+      return;
+    }
+    let cancelled = false;
+    const abort = new AbortController();
+    setLyricsState({ key: lyricKey, result: null, loading: true, error: null });
+    const load = async () => {
+      try {
+        let result: LyricsResult | null = null;
+        if (track.source === 'Local') {
+          result = await api.lyrics(track.id, abort.signal);
+          if (result.synced?.length || result.plain) {
+            result = { ...result, provider: 'Embedded lyrics' };
+          }
+        }
+        if (!result?.synced?.length && !result?.plain) {
+          result = await api.catalogLyrics(track, abort.signal);
+        }
+        if (!cancelled) setLyricsState({ key: lyricKey, result, loading: false, error: null });
+      } catch {
+        if (!cancelled) setLyricsState({
+          key: lyricKey, result: null, loading: false,
+          error: 'Could not load lyrics. The library server or lyrics provider may be unavailable. Try again shortly.',
+        });
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+      abort.abort();
+    };
+  }, [lyricKey, showLyrics, lyricsRetry]);
+
+  const synced = lyrics?.synced || [];
+  const activeIndex = synced.reduce(
+    (active, [time], index) => (time <= currentTime * 1000 ? index : active),
+    -1
+  );
+
+  useEffect(() => {
+    const sheet = lyricSheetRef.current;
+    const active = activeLyricRef.current;
+    if (showLyrics && followLyrics && activeIndex >= 0 && sheet && active) {
+      const top = sheet.scrollTop + active.getBoundingClientRect().top - sheet.getBoundingClientRect().top
+        - sheet.clientHeight / 2 + active.clientHeight / 2;
+      sheet.scrollTo({
+        top: Math.max(0, top),
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+      });
+    }
+  }, [activeIndex, showLyrics, followLyrics]);
 
   const formatTime = (seconds: number) => {
     if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -56,183 +128,254 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
-  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleProgressClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current || duration <= 0) return;
     const rect = progressBarRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const width = rect.width;
-    const clickRatio = Math.max(0, Math.min(1, clickX / width));
+    const clickX = event.clientX - rect.left;
+    const clickRatio = Math.max(0, Math.min(1, clickX / rect.width));
     onSeek(clickRatio * duration);
   };
 
-  return (
-    <div id="screen-now-playing" className="h-full flex flex-col justify-between px-10 py-8 relative">
-      {/* Top Bar: Close / Collapse */}
-      <div className="flex items-center justify-between">
-        <button
-          onClick={onClose}
-          className="flex items-center gap-1.5 text-[13px] text-[#78837A] hover:text-[#24302A] transition-colors p-1"
-          title="Minimize Now Playing"
-        >
-          <ChevronDown size={18} strokeWidth={1.5} />
-          <span>Minimize</span>
-        </button>
+  const seed = track.albumId || track.id || 'empty-room';
 
-        {track.lyrics && track.lyrics.length > 0 && (
+  return (
+    <div id="screen-now-playing" className="np-room">
+      <LivingScene
+        seed={seed}
+        variant={sceneFor(seed, 2)}
+        night={darkMode}
+        playing={isPlaying}
+        notes
+        label={`A living pixel landscape for ${track.title}`}
+      />
+      <div className="np-veil" aria-hidden="true" />
+
+      <div className="np-inner">
+        <div className="np-top">
           <button
-            onClick={() => setShowLyrics(!showLyrics)}
-            className={`flex items-center gap-1.5 text-[12px] px-2.5 py-1 rounded-[6px] transition-colors ${
-              showLyrics
-                ? 'bg-[#E3E9DC] text-[#24302A] font-medium'
-                : 'text-[#78837A] hover:text-[#24302A]'
-            }`}
-            title="Toggle lyrics"
+            onClick={onClose}
+            className="pixel-btn ghost small"
+            title="Minimize now playing"
           >
-            <AlignLeft size={14} strokeWidth={1.5} />
+            <ChevronDown size={14} strokeWidth={2} />
+            <span>Minimize</span>
+          </button>
+
+          <PixelChip tone={track.source === 'Spotify' ? 'sky' : track.source === 'Apple Music' ? 'peach' : 'moss'}>
+            <span className={`pixel-source-dot is-${track.source === 'Spotify' ? 'spotify' : track.source === 'Apple Music' ? 'apple' : 'local'}`} />
+            Now playing · {track.source}
+          </PixelChip>
+
+          <button
+            onClick={() => setShowLyrics((value) => !value)}
+            className={`pixel-btn small ${showLyrics ? '' : 'ghost'}`}
+            title="Toggle lyrics"
+            aria-pressed={showLyrics}
+          >
+            <AlignLeft size={13} strokeWidth={2} />
             <span>Lyrics</span>
           </button>
-        )}
-      </div>
+        </div>
 
-      {/* Main Content Area: Large art centered, title/artist/album */}
-      <div className="flex-1 flex flex-col items-center justify-center my-4">
-        {showLyrics && track.lyrics ? (
-          <div className="max-w-md w-full max-h-[380px] overflow-y-auto text-center space-y-4 px-4 py-2">
-            <p className="text-[12px] tracking-wider uppercase text-[#78837A] font-medium font-sans mb-4">
-              Lyrics
-            </p>
-            {track.lyrics.map((line, idx) => (
-              <p
-                key={idx}
-                className="font-serif-custom text-[19px] text-[#24302A] leading-relaxed"
-              >
-                {line}
-              </p>
-            ))}
+        {showLyrics ? (
+          <div className="np-lyrics-wrap">
+            <div className="np-lyrics" ref={lyricSheetRef} aria-label={`Lyrics for ${track.title}`} aria-busy={lyricsLoading}>
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <span className="px-label">Lyric sheet</span>
+                <span className="px-label">{lyrics?.synced?.length ? 'Time-synced' : track.source}</span>
+              </div>
+              <div className="lyric-song-heading">
+                <strong>{track.title}</strong>
+                <span>{track.artist}</span>
+              </div>
+              {synced.length > 0 && (
+                <button className="px-switch lyric-follow" aria-pressed={followLyrics}
+                  onClick={() => setFollowLyrics((value) => !value)}>
+                  {followLyrics ? 'Auto-follow on' : 'Auto-follow off'}
+                </button>
+              )}
+              {synced.length > 0 ? (
+                synced.map(([time, line], index) => (
+                  <button
+                    type="button"
+                    key={index}
+                    ref={index === activeIndex ? activeLyricRef : undefined}
+                    className={`lyric-line ${index === activeIndex ? 'is-active' : ''}`}
+                    onClick={() => onSeek(time / 1000)}
+                    aria-current={index === activeIndex ? 'true' : undefined}
+                    title={`Jump to ${formatTime(time / 1000)}`}
+                  >
+                    {line || '♪'}
+                  </button>
+                ))
+              ) : lyrics?.plain ? (
+                lyrics.plain.split('\n').map((line, index) => (
+                  <p key={index} className="lyric-line is-plain">
+                    {line || '\u00a0'}
+                  </p>
+                ))
+              ) : (
+                <p className="text-sm" role="status" style={{ color: 'var(--muted)' }}>
+                  {lyricsLoading
+                    ? 'Finding lyrics…'
+                    : lyricsError
+                      ? lyricsError
+                      : lyrics?.instrumental
+                        ? 'An instrumental piece — no lyrics to sing.'
+                        : 'No matching lyrics found for this recording yet.'}
+                </p>
+              )}
+              {!lyricsLoading && (!lyrics || (!lyrics.synced?.length && !lyrics.plain && !lyrics.instrumental)) && (
+                <button className="pixel-btn ghost small mt-4" onClick={() => setLyricsRetry((value) => value + 1)}>
+                  Try again
+                </button>
+              )}
+              <div className="lyric-attribution">
+                {lyrics?.provider === 'Embedded lyrics' ? <span>From your file’s tags</span> : (
+                  <>
+                    <a href={lyrics?.providerUrl || 'https://lrclib.net'} target="_blank" rel="noreferrer">
+                      Lyrics via LRCLIB ↗
+                    </a>
+                    <span>Independent provider · availability and timing vary.</span>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
         ) : (
-          <div className="flex flex-col items-center text-center space-y-7">
-            {/* Album Art & Functioning Rotating Acrylic CD Player beside it */}
-            <div className="flex items-center justify-center gap-7 flex-wrap">
-              {/* Large Art */}
-              <div className="w-[260px] h-[260px] rounded-[12px] overflow-hidden bg-[#EEF1EA] border border-[#E2E6DD] shadow-[0_2px_8px_rgba(36,48,42,0.06)] flex-shrink-0">
-                <img
-                  src={track.coverUrl}
-                  alt={track.album}
-                  className="w-full h-full object-cover"
-                />
+          <div className="np-body">
+            <div className="np-art">
+              <div className="np-art-frame">
+                <PixelFrame
+                  tone={frameToneFor(seed)}
+                  plaque={
+                    <span className="np-art-plaque">
+                      <strong>{track.album || 'Untitled album'}</strong>
+                      <span>{track.source === 'Spotify' ? 'Spotify' : 'Pixel print'} · {track.year || '—'}</span>
+                    </span>
+                  }
+                >
+                  <div className="piece-art">
+                    <PixelArt
+                      original={track.source === 'Spotify'}
+                      src={track.coverUrl}
+                      seed={seed}
+                      alt={`${track.title} by ${track.artist}`}
+                      grid={64}
+                    />
+                  </div>
+                </PixelFrame>
               </div>
-
-              {/* Functioning Rotating Acrylic CD Player matching reference image */}
-              <AcrylicCdPlayer
-                isPlaying={isPlaying}
-                track={track}
-                size={260}
-                onTogglePlay={onTogglePlay}
-              />
             </div>
 
-            {/* Title (serif for title only) + artist + album */}
-            <div className="space-y-1.5 max-w-md">
-              <div className="flex items-center justify-center gap-2.5">
-                <h2 className="font-serif-custom text-[28px] text-[#24302A] leading-tight font-normal">
-                  {track.title}
-                </h2>
+            <div className="np-info">
+              <span className="px-label">Now playing</span>
+              <div className="flex items-start gap-2">
+                <h2 className="np-title" title={track.title}>{track.title || 'Nothing playing'}</h2>
                 <button
                   onClick={onToggleFavorite}
-                  className="text-[#78837A] hover:text-[#24302A] transition-colors p-1"
+                  className={`px-icon-btn mt-2 ${isFavorite ? 'is-fav' : ''}`}
                   title={isFavorite ? 'Remove favorite' : 'Add favorite'}
+                  aria-label={isFavorite ? 'Remove favorite' : 'Add favorite'}
                 >
-                  <Heart
-                    size={16}
-                    strokeWidth={1.5}
-                    className={isFavorite ? 'text-[#6E9662]' : 'text-[#78837A]'}
-                  />
+                  <Heart size={16} strokeWidth={1.8} fill={isFavorite ? 'currentColor' : 'none'} />
                 </button>
               </div>
 
-              <p className="text-[14px] text-[#78837A] font-sans">
-                {track.artist} &bull; {track.album}
+              <p className="np-meta">
+                <b>{track.artist || 'Unknown artist'}</b>
+                {track.album ? <> — {track.album}</> : null}
+                {track.year ? <> · {track.year}</> : null}
               </p>
+
+              <div className="np-live-row">
+                <PixelEqualizer playing={isPlaying} />
+                <span className="px-label">
+                  {isPlaying ? 'Playing' : 'Paused'}
+                </span>
+              </div>
             </div>
           </div>
         )}
-      </div>
 
-      {/* Bottom: Progress bar, transport controls, volume */}
-      <div className="max-w-md w-full mx-auto space-y-5 pb-4">
-        {/* Progress Bar */}
-        <div className="space-y-1.5">
-          <div
-            ref={progressBarRef}
-            onClick={handleProgressClick}
-            className="w-full h-1.5 bg-[#DDE3D7] rounded-full cursor-pointer relative group py-1 -my-1"
-          >
-            <div
-              className="h-1.5 bg-[#6E9662] rounded-full relative"
-              style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }}
-            >
-              <div className="w-3 h-3 bg-[#6E9662] rounded-full absolute right-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity shadow-[0_1px_2px_rgba(0,0,0,0.2)]" />
+        <div className="np-controls">
+          <div className="np-controls-inner">
+            <div className="np-progress">
+              <div
+                ref={progressBarRef}
+                onClick={handleProgressClick}
+                className="px-progress"
+                role="slider"
+                aria-label="Seek"
+                aria-valuemin={0}
+                aria-valuemax={Math.round(duration)}
+                aria-valuenow={Math.round(currentTime)}
+                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowRight') onSeek(Math.min(duration, currentTime + 5));
+                  if (event.key === 'ArrowLeft') onSeek(Math.max(0, currentTime - 5));
+                }}
+              >
+                <div
+                  className="px-progress-fill"
+                  style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }}
+                >
+                  <span className="px-progress-thumb" />
+                </div>
+              </div>
+              <div className="np-times">
+                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
+
+            <div className="np-transport">
+              <button className="np-step" onClick={onPrevious} title="Previous" aria-label="Previous">
+                <SkipBack size={19} strokeWidth={1.8} />
+              </button>
+              <button
+                onClick={onTogglePlay}
+                className="np-play"
+                title={isPlaying ? 'Pause' : 'Play'}
+                aria-label={isPlaying ? 'Pause' : 'Play'}
+              >
+                {isPlaying ? (
+                  <Pause size={20} strokeWidth={2} />
+                ) : (
+                  <Play size={20} strokeWidth={2} className="ml-0.5" />
+                )}
+              </button>
+              <button className="np-step" onClick={onNext} title="Next" aria-label="Next">
+                <SkipForward size={19} strokeWidth={1.8} />
+              </button>
+
+              <div className="np-volume ml-auto">
+                <button
+                  onClick={() => onVolumeChange(volume === 0 ? 0.7 : 0)}
+                  className="px-icon-btn"
+                  title={volume === 0 ? 'Unmute' : 'Mute'}
+                  aria-label={volume === 0 ? 'Unmute' : 'Mute'}
+                >
+                  {volume === 0 ? (
+                    <VolumeX size={14} strokeWidth={1.8} />
+                  ) : (
+                    <Volume2 size={14} strokeWidth={1.8} />
+                  )}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={volume}
+                  onChange={(event) => onVolumeChange(parseFloat(event.target.value))}
+                  className="px-range"
+                  title="Volume"
+                  aria-label="Volume"
+                />
+              </div>
             </div>
           </div>
-          <div className="flex justify-between text-[11px] text-[#78837A] font-mono tabular-nums">
-            <span>{formatTime(currentTime)}</span>
-            <span>{formatTime(duration)}</span>
-          </div>
-        </div>
-
-        {/* Transport Controls */}
-        <div className="flex items-center justify-center gap-6">
-          <button
-            onClick={onPrevious}
-            className="text-[#24302A] hover:opacity-75 transition-opacity p-2"
-            title="Previous"
-          >
-            <SkipBack size={20} strokeWidth={1.5} />
-          </button>
-
-          <button
-            onClick={onTogglePlay}
-            className="w-12 h-12 rounded-full bg-[#6E9662] text-white flex items-center justify-center hover:opacity-90 transition-opacity shadow-[0_2px_6px_rgba(0,0,0,0.08)]"
-            title={isPlaying ? 'Pause' : 'Play'}
-          >
-            {isPlaying ? (
-              <Pause size={20} strokeWidth={1.75} />
-            ) : (
-              <Play size={20} strokeWidth={1.75} className="ml-0.5" />
-            )}
-          </button>
-
-          <button
-            onClick={onNext}
-            className="text-[#24302A] hover:opacity-75 transition-opacity p-2"
-            title="Next"
-          >
-            <SkipForward size={20} strokeWidth={1.5} />
-          </button>
-        </div>
-
-        {/* Volume Control */}
-        <div className="flex items-center justify-center gap-3 pt-1">
-          <button
-            onClick={() => onVolumeChange(volume === 0 ? 0.7 : 0)}
-            className="text-[#78837A] hover:text-[#24302A] transition-colors p-1"
-          >
-            {volume === 0 ? (
-              <VolumeX size={15} strokeWidth={1.5} />
-            ) : (
-              <Volume2 size={15} strokeWidth={1.5} />
-            )}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={volume}
-            onChange={(e) => onVolumeChange(parseFloat(e.target.value))}
-            className="w-32 h-1 bg-[#DDE3D7] rounded-full accent-[#6E9662] cursor-pointer"
-          />
         </div>
       </div>
     </div>
