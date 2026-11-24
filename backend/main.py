@@ -15,6 +15,7 @@ Start:
 from __future__ import annotations
 
 import sys
+import hashlib
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -62,6 +63,11 @@ def _fmt_duration(ms: int) -> str:
     return f"{sec // 60}:{sec % 60:02d}"
 
 
+def _album_id(album, artist):
+    key = f"{album}|{artist}"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:20]
+
+
 def _row_to_track(row: sqlite3.Row) -> Dict[str, Any]:
     """Map SQLite track row → React Track shape."""
     d = dict(row)
@@ -74,7 +80,7 @@ def _row_to_track(row: sqlite3.Row) -> Dict[str, Any]:
         "title": d.get("title") or "Unknown",
         "artist": d.get("artist") or "Unknown Artist",
         "album": d.get("album") or "Unknown Album",
-        "albumId": (d.get("album") or "unknown").lower().replace(" ", "-"),
+        "albumId": _album_id(d.get("album"), d.get("artist")),
         "year": d.get("year") or 0,
         "duration": _fmt_duration(duration_ms),
         "durationSec": int(duration_ms / 1000),
@@ -147,7 +153,7 @@ def list_albums():
         if key not in albums:
             tid = str(r["id"])
             albums[key] = {
-                "id": (r["album"] or "unknown").lower().replace(" ", "-"),
+                "id": _album_id(r["album"], r["artist"]),
                 "title": r["album"] or "Unknown Album",
                 "artist": r["artist"] or "Unknown Artist",
                 "year": r["year"] or 0,
