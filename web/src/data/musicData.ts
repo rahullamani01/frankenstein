@@ -12,6 +12,9 @@ export interface Track {
   trackNumber: number;
   isFavorite?: boolean;
   lyrics?: string[];
+  spotifyUri?: string;
+  externalUrl?: string;
+  primaryArtist?: string;
 }
 
 export interface Album {
