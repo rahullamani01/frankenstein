@@ -26,6 +26,7 @@ export interface SpotifyTrack {
   duration_ms: number;
   track_number: number;
   external_urls?: { spotify?: string };
+  preview_url?: string | null;
 }
 
 export function mapSpotifyTrack(track: SpotifyTrack): Track {
@@ -44,6 +45,7 @@ export function mapSpotifyTrack(track: SpotifyTrack): Track {
     duration: `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`,
     source: 'Spotify',
     coverUrl: track.album.images[0]?.url || '',
+    previewUrl: track.preview_url || undefined,
     trackNumber: track.track_number,
   };
 }

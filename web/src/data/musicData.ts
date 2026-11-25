@@ -15,6 +15,7 @@ export interface Track {
   spotifyUri?: string;
   externalUrl?: string;
   primaryArtist?: string;
+  previewUrl?: string;
 }
 
 export interface Album {

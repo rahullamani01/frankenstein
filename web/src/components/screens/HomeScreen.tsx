@@ -19,6 +19,9 @@ interface HomeScreenProps {
   darkMode: boolean;
   onPlayTrack: (track: Track) => void;
   onOpenNowPlaying: () => void;
+  /** True when the library server could not be reached. */
+  offline?: boolean;
+  onRetry?: () => void;
 }
 
 const sourceShort = (source: Album['source']) =>
@@ -35,6 +38,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   darkMode,
   onPlayTrack,
   onOpenNowPlaying,
+  offline = false,
+  onRetry,
 }) => {
   const [cityView, setCityView] = useState(false);
   const hour = new Date().getHours();
@@ -147,11 +152,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
 
         {collection.length === 0 ? (
-          <EmptyGallery
-            title="The walls are waiting"
-            body="Start the local backend and import a folder, and your albums will hang themselves here."
-            hint="cd backend && python main.py  ·  then Library → import"
-          />
+          offline ? (
+            <EmptyGallery
+              title="We can't reach the gallery"
+              body="We're sorry. We can't connect to the outer reaches of the library right now."
+              hint="Start the library server, then the walls will fill on their own."
+              action={
+                onRetry ? (
+                  <button type="button" className="pixel-btn small" onClick={onRetry}>
+                    Try again
+                  </button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <EmptyGallery
+              title="The walls are waiting"
+              body="Start the local backend and import a folder, and your albums will hang themselves here."
+              hint="cd backend && python main.py  ·  then Library → import"
+            />
+          )
         ) : (
           <div className="gallery-grid">
             {collection.map((album) => {

@@ -8,6 +8,7 @@ import {
   Heart,
   AlignLeft,
   Shuffle,
+  Compass,
 } from 'lucide-react';
 import { Track } from '../../data/musicData';
 import { AmbientBackground } from '../pixel/AmbientBackground';
@@ -35,6 +36,10 @@ export interface NowPlayingScreenProps {
   shuffle: boolean;
   onToggleShuffle: () => void;
   onToggleFavorite: () => void;
+  onDiscoverSimilar: () => void;
+  showRecommendations: boolean;
+  onShowRecommendationsChange: (value: boolean) => void;
+  lyricsRequested?: number;
 }
 
 export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
@@ -53,8 +58,15 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
   shuffle,
   onToggleShuffle,
   onToggleFavorite,
+  onDiscoverSimilar,
+  showRecommendations,
+  onShowRecommendationsChange,
+  lyricsRequested,
 }) => {
   const [showLyrics, setShowLyrics] = useState(false);
+  React.useEffect(() => {
+    if (lyricsRequested) setShowLyrics(true);
+  }, [lyricsRequested]);
   const seed = track.albumId || track.id || 'empty-room';
   const {
     barRef: progressBarRef,
@@ -120,6 +132,17 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
             <span className={`pixel-source-dot is-${track.source === 'Spotify' ? 'spotify' : track.source === 'Apple Music' ? 'apple' : 'local'}`} />
             Now playing · {track.source}
           </PixelChip>
+
+          <div className="np-discovery-actions">
+            <button type="button" className="pixel-btn ghost small" onClick={onDiscoverSimilar} disabled={!track.id} title="Discover similar songs">
+              <Compass size={14} strokeWidth={1.8} />
+              <span>Discover similar</span>
+            </button>
+            <label className="np-recommend-setting" title="Show recommendations after a song ends">
+              <input type="checkbox" checked={showRecommendations} onChange={(event) => onShowRecommendationsChange(event.target.checked)} />
+              <span>After song ends</span>
+            </label>
+          </div>
 
           <button
             onClick={() => setShowLyrics((value) => !value)}

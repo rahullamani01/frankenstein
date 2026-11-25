@@ -2,6 +2,7 @@ import React from 'react';
 import { Heart, Play } from 'lucide-react';
 import { Track } from '../../data/musicData';
 import { FrameTone } from '../../theme/pixel';
+import { EmptyScene } from './EmptyScene';
 
 /* ------------------------------------------------------------------ */
 /*  Small shared building blocks for the pixel gallery                */
@@ -179,18 +180,8 @@ export const EmptyGallery: React.FC<{
   title: string;
   body: string;
   hint?: string;
-}> = ({ title, body, hint }) => (
-  <div className="px-empty">
-    <div className="px-empty-frame" aria-hidden="true">
-      <span className="px-empty-sun" />
-      <span className="px-empty-hill" />
-      <span className="px-empty-hill is-back" />
-      <span className="px-empty-ground" />
-    </div>
-    <div>
-      <p className="px-display px-empty-title">{title}</p>
-      <p className="px-empty-body">{body}</p>
-      {hint ? <p className="px-empty-hint">{hint}</p> : null}
-    </div>
-  </div>
+  ghost?: string;
+  action?: React.ReactNode;
+}> = ({ title, body, hint, ghost, action }) => (
+  <EmptyScene title={title} body={body} hint={hint} ghost={ghost} action={action} />
 );

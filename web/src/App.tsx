@@ -7,6 +7,7 @@ import { LibraryScreen } from './components/screens/LibraryScreen';
 import { Hillside } from './components/pixel/Hillside';
 import { AlbumViewScreen } from './components/screens/AlbumViewScreen';
 import { NowPlayingOverlay } from './components/NowPlayingOverlay';
+import { DiscoveryScene } from './components/DiscoveryScene';
 import { FavoritesScreen } from './components/screens/FavoritesScreen';
 import { HistoryScreen } from './components/screens/HistoryScreen';
 import { PlaylistsScreen } from './components/screens/PlaylistsScreen';
@@ -17,12 +18,20 @@ import { localAudio } from './utils/localAudio';
 import { spotify } from './services/spotify';
 import { captureArtwork, startArtworkFlight, type ArtworkSource } from './utils/artworkFlight';
 import { useReducedMotion } from './hooks/useReducedMotion';
+import { getRecommendations, readRecommendations, recommendationKey, trackIdentity } from './recommendations/similar';
 
-function savedSpotifyTracks(): Track[] {
+function savedCatalogueTracks(): Track[] {
   try {
     const saved = JSON.parse(localStorage.getItem('frankenstein:spotify-collection') || '[]');
-    return Array.isArray(saved) ? saved.filter((t) => t?.source === 'Spotify' && t.spotifyUri) : [];
+    return Array.isArray(saved)
+      ? saved.filter((t) => t?.source === 'Apple Music' || (t?.source === 'Spotify' && t.spotifyUri))
+      : [];
   } catch { return []; }
+}
+
+function savedSetting(key: string, defaultValue: boolean): boolean {
+  try { return localStorage.getItem(key) === null ? defaultValue : localStorage.getItem(key) === 'true'; }
+  catch { return defaultValue; }
 }
 
 function toTrack(t: ApiTrack): Track {
@@ -52,7 +61,7 @@ export default function App() {
   }, [darkMode]);
   const [localTracks, setTracks] = useState<Track[]>([]);
   const [libraryAlbums, setAlbums] = useState<Album[]>([]);
-  const [streamingTracks, setStreamingTracks] = useState<Track[]>(savedSpotifyTracks);
+  const [streamingTracks, setStreamingTracks] = useState<Track[]>(savedCatalogueTracks);
   const [artists, setArtists] = useState<Artist[]>([]);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -75,14 +84,47 @@ export default function App() {
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [playbackBusy, setPlaybackBusy] = useState(false);
   const [queue, setQueue] = useState<Track[]>([]);
+  const [upNext, setUpNext] = useState<Track[]>([]);
+  const [discoveryTrack, setDiscoveryTrack] = useState<Track | null>(null);
+  const [discoveryFromEnd, setDiscoveryFromEnd] = useState(false);
+  const [lyricsRequested, setLyricsRequested] = useState(0);
+  const [recommendations, setRecommendations] = useState<Track[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
+  const [showRecommendations, setShowRecommendations] = useState(() =>
+    savedSetting('frankenstein:show-recommendations', true)
+  );
+  const [autoPlayRecommendation, setAutoPlayRecommendation] = useState(() =>
+    savedSetting('frankenstein:auto-play-recommendation', false)
+  );
+  const [previewRecommendation, setPreviewRecommendation] = useState(() =>
+    savedSetting('frankenstein:preview-recommendation', false)
+  );
+  const discoveryRef = useRef(false);
+  const endedRef = useRef('');
+  const seekingRef = useRef(0);
+  const sceneRequest = useRef(0);
   const [shuffle, setShuffle] = useState(false);
   const spotifyState = useSyncExternalStore(spotify.subscribe, spotify.getSnapshot);
   const currentTrackRef = useRef(currentTrack);
   currentTrackRef.current = currentTrack;
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
+  const currentTimeRef = useRef(currentTime);
+  currentTimeRef.current = currentTime;
   const playRequest = useRef(0);
   const lastPlaybackStart = useRef(0);
   const nextTrackRef = useRef<() => void>(() => {});
+  const endTrackRef = useRef<() => void>(() => {});
   const tracks = useMemo(() => [...localTracks, ...streamingTracks], [localTracks, streamingTracks]);
+  useEffect(() => {
+    try { localStorage.setItem('frankenstein:show-recommendations', String(showRecommendations)); } catch { /* optional */ }
+  }, [showRecommendations]);
+  useEffect(() => {
+    try { localStorage.setItem('frankenstein:auto-play-recommendation', String(autoPlayRecommendation)); } catch { /* optional */ }
+  }, [autoPlayRecommendation]);
+  useEffect(() => {
+    try { localStorage.setItem('frankenstein:preview-recommendation', String(previewRecommendation)); } catch { /* optional */ }
+  }, [previewRecommendation]);
   // Played catalogue tracks only; imported local files stay in the Local source.
   const recentLibraryTracks = useMemo(() => {
     const seen = new Set<string>();
@@ -100,7 +142,7 @@ export default function App() {
       seen.add(track.albumId);
       result.push({
         id: track.albumId, title: track.album, artist: track.artist, year: track.year,
-        source: 'Spotify', coverUrl: track.coverUrl,
+        source: track.source, coverUrl: track.coverUrl,
         trackCount: streamingTracks.filter((t) => t.albumId === track.albumId).length,
       });
     });
@@ -115,6 +157,57 @@ export default function App() {
     () => (currentAlbum ? tracks.filter((track) => track.albumId === currentAlbum.id) : []),
     [currentAlbum, tracks],
   );
+
+  const loadDiscovery = useCallback((track: Track) => {
+    const request = ++sceneRequest.current;
+    setRecommendations(readRecommendations(track) ?? []);
+    setRecommendationsLoading(true);
+    void getRecommendations(track, tracks, history)
+      .then((result) => {
+        if (request === sceneRequest.current) setRecommendations(result);
+      })
+      .catch(() => {
+        if (request === sceneRequest.current) setRecommendations([]);
+      })
+      .finally(() => {
+        if (request === sceneRequest.current) setRecommendationsLoading(false);
+      });
+  }, [tracks, history]);
+
+  const openDiscovery = useCallback((track: Track, fromEnd = false) => {
+    if (!track.id || discoveryRef.current) return;
+    discoveryRef.current = true;
+    setDiscoveryFromEnd(fromEnd);
+    setDiscoveryTrack(track);
+    loadDiscovery(track);
+  }, [loadDiscovery]);
+
+  const closeDiscovery = useCallback(() => {
+    discoveryRef.current = false;
+    sceneRequest.current += 1;
+    setDiscoveryTrack(null);
+    setNowPlayingOpen(true);
+  }, []);
+
+  // Warm the recommendation cache while the current song is still playing.
+  const prefetchKey = currentTrack ? recommendationKey(currentTrack) : '';
+  useEffect(() => {
+    if (!currentTrack || !isPlaying || !showRecommendations || discoveryRef.current) return;
+    const remaining = currentTrack.durationSec - currentTime;
+    if (remaining <= 20 && remaining > 1 && !readRecommendations(currentTrack)) {
+      void getRecommendations(currentTrack, tracks, history).catch(() => {});
+    }
+  }, [prefetchKey, currentTime, isPlaying, showRecommendations, tracks, history, currentTrack]);
+
+  const onTrackEnded = () => {
+    const track = currentTrackRef.current;
+    if (!track || !track.id || endedRef.current === trackIdentity(track) || Date.now() - seekingRef.current < 1600) return;
+    endedRef.current = trackIdentity(track);
+    setIsPlaying(false);
+    if (showRecommendations) openDiscovery(track, true);
+    else nextTrackRef.current();
+  };
+  endTrackRef.current = onTrackEnded;
 
   // Next/previous and shuffle stay inside the list the song was started from,
   // so playing from Favorites never wanders into the rest of the library.
@@ -157,15 +250,40 @@ export default function App() {
       try {
         const state = await spotify.playback();
         if (!cancelled && state) {
-          // Spotify's state can lag a just-issued play command. Keep the new
-          // song and its playing state for a moment instead of snapping back.
-          if (Date.now() - lastPlaybackStart.current > 1500) {
-            setCurrentTrack((previous) => previous?.id === state.track.id
-              ? { ...previous, durationSec: state.track.durationSec }
-              : state.track);
-            setIsPlaying(state.isPlaying);
+          const previous = currentTrackRef.current;
+          const finished = previous?.source === 'Spotify'
+            && state.track.id === previous.id
+            && isPlayingRef.current
+            && !state.isPlaying
+            && state.position >= Math.max(0, previous.durationSec - 1.5);
+          const advancedAfterEnd = previous?.source === 'Spotify'
+            && state.track.id !== previous.id
+            && isPlayingRef.current
+            && Date.now() - lastPlaybackStart.current > 2500
+            && Date.now() - seekingRef.current > 1600
+            && previous.durationSec > 0
+            && currentTimeRef.current >= previous.durationSec - 2.5;
+          if (finished || advancedAfterEnd) {
+            endTrackRef.current();
+            if (advancedAfterEnd) void spotify.pause().catch(() => {});
           }
-          setCurrentTime(state.position);
+          if (!discoveryRef.current && !finished && !advancedAfterEnd) {
+            // Spotify's state can lag a just-issued play command.
+            if (Date.now() - lastPlaybackStart.current > 1500) {
+              setCurrentTrack((previous) => previous?.id === state.track.id
+                ? { ...previous, durationSec: state.track.durationSec }
+                : state.track);
+              setIsPlaying(state.isPlaying);
+            }
+            setCurrentTime(state.position);
+          }
+        } else if (!cancelled && !state && !discoveryRef.current) {
+          const previous = currentTrackRef.current;
+          if (previous?.source === 'Spotify' && isPlayingRef.current
+            && previous.durationSec > 0
+            && currentTimeRef.current >= previous.durationSec - 2.5) {
+            endTrackRef.current();
+          }
         }
       } catch (error) {
         if (!cancelled) reportPlaybackError(error);
@@ -179,6 +297,33 @@ export default function App() {
   useEffect(() => {
     if (!spotifyState.connected && currentTrackRef.current?.source === 'Spotify') setIsPlaying(false);
   }, [spotifyState.connected]);
+
+  useEffect(() => {
+    if (currentTrack?.source !== 'Apple Music' || !isPlaying) return;
+    let cancelled = false;
+    const interval = window.setInterval(() => {
+      void api.appleStatus().then((status) => {
+        if (cancelled || discoveryRef.current) return;
+        if (!status.nowPlaying) {
+          const current = currentTrackRef.current;
+          if (current?.source === 'Apple Music' && current.durationSec > 0
+            && currentTimeRef.current >= current.durationSec - 2.5) endTrackRef.current();
+          return;
+        }
+        const playing = status.nowPlaying.state.toLowerCase() === 'playing';
+        const position = status.nowPlaying.position_seconds;
+        const current = currentTrackRef.current;
+        if (current?.source !== 'Apple Music') return;
+        if (!playing && Number.isFinite(position) && position >= Math.max(0, current.durationSec - 1.5)) {
+          endTrackRef.current();
+        } else if (Number.isFinite(position)) {
+          setCurrentTime(position);
+          if (!playing) setIsPlaying(false);
+        }
+      }).catch(() => {});
+    }, 1600);
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [currentTrack?.source, isPlaying]);
 
   // Load library from FastAPI backend
   const refreshLibrary = useCallback(async () => {
@@ -232,8 +377,7 @@ export default function App() {
       if (currentTrackRef.current?.source === 'Local') setCurrentTime(t);
     });
     localAudio.onEnded(() => {
-      setIsPlaying(false);
-      nextTrackRef.current();
+      endTrackRef.current();
     });
     localAudio.setVolume(volume);
   }, []);
@@ -297,6 +441,7 @@ export default function App() {
   }, [currentScreen, selectedAlbumId]);
 
   const handlePlayTrack = async (track: Track) => {
+    seekingRef.current = Date.now();
     const request = ++playRequest.current;
     setPlaybackBusy(true);
     setPlaybackError(null);
@@ -326,12 +471,14 @@ export default function App() {
       }
       if (request !== playRequest.current) return;
       lastPlaybackStart.current = Date.now();
+      endedRef.current = '';
       setQueue(context);
+      setUpNext((previous) => previous.filter((item) => trackIdentity(item) !== trackIdentity(track)));
       setCurrentTrack(track);
       setCurrentTime(0);
       setIsPlaying(true);
       setHistory((prev) => [track, ...prev.filter((t) => t.id !== track.id)].slice(0, 30));
-      if (track.source === 'Spotify') {
+      if (track.source !== 'Local') {
         setStreamingTracks((previous) => {
           const existing = previous.find((t) => t.id === track.id);
           return [{ ...track, isFavorite: existing?.isFavorite ?? false }, ...previous.filter((t) => t.id !== track.id)].slice(0, 200);
@@ -376,6 +523,10 @@ export default function App() {
   };
 
   const handleNextTrack = () => {
+    if (upNext.length) {
+      void handlePlayTrack(upNext[0]);
+      return;
+    }
     const list = playbackQueue();
     if (list.length === 0) return;
     if (list.length === 1) {
@@ -411,6 +562,8 @@ export default function App() {
   };
 
   const handleSeek = (newTime: number) => {
+    seekingRef.current = Date.now();
+    if (newTime < Math.max(0, (currentTrack?.durationSec || 0) - 2)) endedRef.current = '';
     setCurrentTime(newTime);
     if (currentTrack?.source === 'Local') localAudio.seek(newTime);
     else if (currentTrack?.source === 'Spotify') void spotify.seek(newTime).catch(reportPlaybackError);
@@ -426,12 +579,15 @@ export default function App() {
 
   const handleToggleFavorite = async (trackId: string) => {
     const streamingTrack = streamingTracks.find((t) => t.id === trackId)
-      || (currentTrack?.id === trackId && currentTrack.source === 'Spotify' ? currentTrack : null);
-    if (streamingTrack) {
-      const isFavorite = !streamingTrack.isFavorite;
+      || (currentTrack?.id === trackId && currentTrack.source !== 'Local' ? currentTrack : null);
+    const recommendationTrack = recommendations.find((t) => t.id === trackId && t.source !== 'Local');
+    const catalogueTrack = streamingTrack || recommendationTrack;
+    if (catalogueTrack) {
+      const isFavorite = !catalogueTrack.isFavorite;
       setStreamingTracks((previous) => [
-        { ...streamingTrack, isFavorite }, ...previous.filter((t) => t.id !== trackId),
+        { ...catalogueTrack, isFavorite }, ...previous.filter((t) => t.id !== trackId),
       ]);
+      setRecommendations((previous) => previous.map((item) => item.id === trackId ? { ...item, isFavorite } : item));
       setCurrentTrack((previous) => previous?.id === trackId ? { ...previous, isFavorite } : previous);
       return;
     }
@@ -443,6 +599,9 @@ export default function App() {
           t.id === trackId ? { ...t, isFavorite: res.isFavorite } : t
         )
       );
+      setRecommendations((previous) => previous.map((item) =>
+        item.id === trackId ? { ...item, isFavorite: res.isFavorite } : item
+      ));
       if (currentTrack?.id === trackId) {
         setCurrentTrack((prev) =>
           prev ? { ...prev, isFavorite: res.isFavorite } : prev
@@ -483,6 +642,12 @@ export default function App() {
     setNowPlayingOpen(true);
   };
 
+  const handleDiscoverSimilar = () => {
+    if (!currentTrack) return;
+    if (isPlaying) void handleTogglePlay();
+    openDiscovery(currentTrack);
+  };
+
   const handleCloseNowPlaying = () => {
     setNowPlayingOpen(false);
   };
@@ -504,6 +669,19 @@ export default function App() {
     trackNumber: 0,
   };
   const displayTrack = currentTrack || emptyTrack;
+  const contextIndex = discoveryTrack
+    ? queue.findIndex((item) => trackIdentity(item) === trackIdentity(discoveryTrack))
+    : -1;
+  const nextInContext = contextIndex >= 0 && queue.length > 1
+    ? queue[(contextIndex + 1) % queue.length]
+    : null;
+  const queuedFirst = upNext[0] || nextInContext;
+  const discoveryCards = discoveryTrack
+    ? [...(queuedFirst ? [queuedFirst] : []), ...upNext, ...recommendations].filter((item, index, list) =>
+      trackIdentity(item) !== trackIdentity(discoveryTrack)
+      && list.findIndex((other) => trackIdentity(other) === trackIdentity(item)) === index
+    ).slice(0, 12)
+    : [];
 
   return (
     <div
@@ -542,8 +720,8 @@ export default function App() {
 
       <div
         className="flex-1 flex overflow-hidden"
-        aria-hidden={nowPlayingOpen || undefined}
-        inert={nowPlayingOpen || undefined}
+        aria-hidden={nowPlayingOpen || Boolean(discoveryTrack) || undefined}
+        inert={nowPlayingOpen || Boolean(discoveryTrack) || undefined}
       >
         <Sidebar currentScreen={currentScreen} onNavigate={handleNavigate} darkMode={darkMode} onToggleTheme={() => setDarkMode((value) => !value)} />
 
@@ -571,6 +749,8 @@ export default function App() {
               darkMode={darkMode}
               onPlayTrack={handlePlayTrack}
               onOpenNowPlaying={handleOpenNowPlaying}
+              offline={backendOk === false}
+              onRetry={() => void refreshLibrary()}
             />
           )}
 
@@ -681,8 +861,8 @@ export default function App() {
 
       <div
         className="player-slot"
-        aria-hidden={nowPlayingOpen || undefined}
-        inert={nowPlayingOpen || undefined}
+        aria-hidden={nowPlayingOpen || Boolean(discoveryTrack) || undefined}
+        inert={nowPlayingOpen || Boolean(discoveryTrack) || undefined}
       >
         <PlayerBar
           currentTrack={displayTrack}
@@ -705,6 +885,7 @@ export default function App() {
         />
       </div>
 
+      <div aria-hidden={Boolean(discoveryTrack) || undefined} inert={Boolean(discoveryTrack) || undefined}>
       <NowPlayingOverlay
         open={nowPlayingOpen}
         track={displayTrack}
@@ -724,7 +905,57 @@ export default function App() {
         onToggleFavorite={() =>
           displayTrack.id && handleToggleFavorite(displayTrack.id)
         }
+        onDiscoverSimilar={handleDiscoverSimilar}
+        showRecommendations={showRecommendations}
+        onShowRecommendationsChange={setShowRecommendations}
+        lyricsRequested={lyricsRequested}
       />
+      </div>
+      {discoveryTrack && (
+        <DiscoveryScene
+          track={discoveryTrack}
+          cards={discoveryCards}
+          queuedId={queuedFirst ? trackIdentity(queuedFirst) : undefined}
+          queuedTracks={upNext.length ? upNext : nextInContext ? [nextInContext] : []}
+          loading={recommendationsLoading}
+          isPlaying={isPlaying}
+          currentTime={currentTime}
+          volume={volume}
+          autoPlay={autoPlayRecommendation}
+          startCountdown={discoveryFromEnd}
+          preview={previewRecommendation}
+          onAutoPlayChange={setAutoPlayRecommendation}
+          onPreviewChange={setPreviewRecommendation}
+          onClose={closeDiscovery}
+          onPlay={(item) => {
+            discoveryRef.current = false;
+            sceneRequest.current += 1;
+            setDiscoveryTrack(null);
+            void handlePlayTrack(item);
+          }}
+          onTogglePlay={handleTogglePlay}
+          onPrevious={() => {
+            discoveryRef.current = false;
+            setDiscoveryTrack(null);
+            handlePreviousTrack();
+          }}
+          onNext={() => {
+            discoveryRef.current = false;
+            setDiscoveryTrack(null);
+            handleNextTrack();
+          }}
+          onLyrics={() => {
+            setLyricsRequested((value) => value + 1);
+            closeDiscovery();
+          }}
+          onQueue={(item, next) => setUpNext((previous) => {
+            const remaining = previous.filter((queued) => trackIdentity(queued) !== trackIdentity(item));
+            return next ? [item, ...remaining] : [...remaining, item];
+          })}
+          onFavorite={(item) => void handleToggleFavorite(item.id)}
+          onVolume={handleVolumeChange}
+        />
+      )}
     </div>
   );
 }

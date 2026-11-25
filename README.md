@@ -88,6 +88,20 @@ npm run dev
 
 Open http://127.0.0.1:3001 — the pixel gallery, now talking to the real backend.
 
+### Up next / similar songs
+
+The now-playing view has **Discover similar**. When a track ends, the scene opens
+automatically (unless **After song ends** is unchecked). Its playback, queue,
+autoplay and preview controls save their settings locally in this browser.
+Recommendations use your current source and library even without an API key.
+For wider Last.fm suggestions, add this line to `web/.env.local` and restart Vite:
+
+```env
+VITE_LASTFM_API_KEY=your_lastfm_api_key
+```
+
+The key is used client-side, so use a public Last.fm API key, not a secret.
+
 ## Tests
 
 ```bash

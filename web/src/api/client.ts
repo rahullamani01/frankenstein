@@ -3,7 +3,7 @@
  * Uses the same-origin Vite proxy unless an API base is configured.
  */
 
-const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+const API_BASE = (import.meta.env?.VITE_API_BASE || "").replace(/\/$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
