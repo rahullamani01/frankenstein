@@ -362,22 +362,22 @@ export function DiscoveryScene({
                     </svg>
                   )}
                 </button>
+                {position === index && selected && (
+                  <div className="discovery-card-menu-wrap">
+                    <button type="button" className="discovery-icon" aria-label="More options for focused song" aria-expanded={menu} onClick={() => { cancelCountdown(); setMenu(!menu); }}>
+                      <MoreHorizontal size={20} />
+                    </button>
+                    {menu && <div className="discovery-card-menu">
+                      <button type="button" onClick={() => { onQueue(selected, true); setMenu(false); }}>Play next</button>
+                      <button type="button" onClick={() => { onQueue(selected, false); setMenu(false); }}>Add to queue</button>
+                      <button type="button" onClick={() => { onFavorite(selected); setMenu(false); }}><Heart size={14} /> {selected.isFavorite ? 'Unfavorite' : 'Favorite'}</button>
+                    </div>}
+                  </div>
+                )}
               </div>
             </div>
           );
         })}
-        {selected && (
-          <div className="discovery-card-menu-wrap">
-            <button type="button" className="discovery-icon" aria-label="More options for focused song" aria-expanded={menu} onClick={() => { cancelCountdown(); setMenu(!menu); }}>
-              <MoreHorizontal size={20} />
-            </button>
-            {menu && <div className="discovery-card-menu">
-              <button type="button" onClick={() => { onQueue(selected, true); setMenu(false); }}>Play next</button>
-              <button type="button" onClick={() => { onQueue(selected, false); setMenu(false); }}>Add to queue</button>
-              <button type="button" onClick={() => { onFavorite(selected); setMenu(false); }}><Heart size={14} /> {selected.isFavorite ? 'Unfavorite' : 'Favorite'}</button>
-            </div>}
-          </div>
-        )}
       </div>
 
       <nav className="discovery-controls" aria-label="Playback controls">
