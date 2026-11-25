@@ -152,26 +152,31 @@ async function exchange(body: Record<string, string>, previousRefresh?: string):
     body: new URLSearchParams({ client_id: CLIENT_ID, ...body }),
     signal: AbortSignal.timeout(15000),
   });
-  const result = await response.json();
+  const text = await response.text();
+  let result: { access_token?: string; refresh_token?: string; expires_in?: number; error?: string } = {};
+  try { result = text ? JSON.parse(text) : {}; } catch { /* non-JSON error page */ }
   if (!response.ok || !result.access_token) {
     if (response.status === 400 || response.status === 401) disconnect();
     throw new SpotifyError(
       result.error === 'invalid_client'
         ? 'Spotify rejected this Client ID. Copy the Client ID from the Frankenstein app’s Settings, not a Soloist API key.'
-        : 'Spotify sign-in expired or was rejected. Please connect again.',
+        : response.ok
+          ? 'Spotify returned an unexpected sign-in response. Please connect again.'
+          : 'Spotify sign-in expired or was rejected. Please connect again.',
       response.status,
     );
   }
   if (expectedGeneration !== generation) throw new SpotifyError('Spotify was disconnected.');
-  tokens = {
+  const nextTokens: Tokens = {
     access_token: result.access_token,
-    refresh_token: result.refresh_token || previousRefresh,
+    refresh_token: result.refresh_token || previousRefresh || '',
     expires_at: Date.now() + Number(result.expires_in || 3600) * 1000,
   };
-  if (!tokens.refresh_token) throw new SpotifyError('Spotify did not return a refresh token. Connect again.');
-  sessionStorage.setItem(TOKEN_KEY, JSON.stringify(tokens));
+  if (!nextTokens.refresh_token) throw new SpotifyError('Spotify did not return a refresh token. Connect again.');
+  tokens = nextTokens;
+  sessionStorage.setItem(TOKEN_KEY, JSON.stringify(nextTokens));
   update({ connected: true, error: null });
-  return tokens.access_token;
+  return nextTokens.access_token;
 }
 
 async function accessToken(force = false): Promise<string> {
@@ -216,7 +221,12 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
   }
   if (response.status === 204 || response.headers.get('Content-Length') === '0') return undefined as T;
   const text = await response.text();
-  return text ? JSON.parse(text) as T : undefined as T;
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new SpotifyError('Spotify returned an unexpected response. Please try again.', response.status);
+  }
 }
 
 async function connect() {
@@ -368,16 +378,31 @@ function preparePlayer(): Promise<string> {
   return sdkPromise;
 }
 
+async function resolveTrackUri(track: Track): Promise<string> {
+  if (track.spotifyUri?.match(/^spotify:track:[A-Za-z0-9]+$/)) return track.spotifyUri;
+  const query = [track.title, track.artist].filter(Boolean).join(' ').trim();
+  if (!query) throw new SpotifyError('This song does not have a Spotify track URI.');
+  const result = await request<{ tracks: { items: SpotifyTrack[] } }>(
+    `/search?${new URLSearchParams({ q: query, type: 'track', limit: '1' })}`,
+  );
+  const uri = result.tracks.items.find(Boolean)?.uri;
+  if (!uri) throw new SpotifyError(`“${track.title}” could not be found on Spotify.`);
+  return uri;
+}
+
 async function play(track: Track) {
-  if (!track.spotifyUri?.match(/^spotify:track:[A-Za-z0-9]+$/)) {
-    throw new SpotifyError('This song does not have a valid Spotify track URI.');
+  if (!snapshot.connected) {
+    throw new SpotifyError('Connect Spotify to play this song.', 401);
   }
   if (snapshot.output === 'browser') {
     // Invoke during the click gesture, before awaiting any network calls.
     await sdkPlayer?.activateElement();
+  }
+  const uri = await resolveTrackUri(track);
+  if (snapshot.output === 'browser') {
     const id = await preparePlayer();
     await request(`/me/player/play?device_id=${encodeURIComponent(id)}`, {
-      method: 'PUT', body: JSON.stringify({ uris: [track.spotifyUri] }),
+      method: 'PUT', body: JSON.stringify({ uris: [uri] }),
     });
   } else {
     const result = await request<{ devices: { id: string; is_active: boolean; is_restricted: boolean; name: string }[] }>('/me/player/devices');
@@ -385,7 +410,7 @@ async function play(track: Track) {
     const target = devices.find((device) => device.is_active) || devices[0];
     if (!target) throw new SpotifyError('Open Spotify on this Mac and play any song once, then click this result again.');
     await request(`/me/player/play?device_id=${encodeURIComponent(target.id)}`, {
-      method: 'PUT', body: JSON.stringify({ uris: [track.spotifyUri] }),
+      method: 'PUT', body: JSON.stringify({ uris: [uri] }),
     });
   }
   update({ error: null });

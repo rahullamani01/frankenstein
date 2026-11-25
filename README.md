@@ -135,12 +135,22 @@ states. Availability and timing vary by recording.
 
 ## Living day/night scenery
 
-The scenery uses a high-DPI canvas (up to 3840 × 2160), with clean typography
-kept outside the home scene. Daylight changes with the local time of day;
-night brings drifting stars, a soft galaxy, moonlight and occasional meteors.
-The theme switch blends over 1.6 seconds without resetting the scene.
-Motion pauses offscreen or in background tabs, and respects the system's
-Reduce Motion setting. The app does not require a rendered video or image assets.
+The default gallery window shows a forest laptop in daylight and a sleeping
+minifigure at a monitor-lit desk at night. Image-aligned layers animate the
+coffee steam, game displays, terminal lights and sleeping figure. The photos
+and sprites are bundled locally; the artwork crossfades with the theme.
+
+**Change view** switches the gallery window to a pixel city: cars pass the shops and clouds drift
+over the roofs. The theme switch takes the sky through sunset into moonlight
+over 2.4 seconds. Stars twinkle and a small spacecraft occasionally passes.
+Around the artwork, the listening space has a low pixel hillside with drifting
+clouds by day and stars and a lit cabin window by night. The red radio on the
+stump uses playback state for its two display bars. Narrow screens crop the
+panorama from both sides. The scenery adds no audio.
+
+The renderer caches the buildings and scales a bounded pixel grid without
+smoothing. Animation sleeps between frames, pauses offscreen and in hidden
+tabs, and shows a still scene when the system requests reduced motion.
 
 ## How playback works
 
@@ -153,6 +163,10 @@ Reduce Motion setting. The app does not require a rendered video or image assets
 Spotify catalogue playback requires Premium and authorization for the developer app.
 Local audio needs no account. Apple Music playback depends on the desktop app and
 the availability of the track in your Music.app library.
+
+Next, previous and shuffle follow the list a song was started from, so playback
+from Favorites stays inside Favorites. If a song cannot start, the current one
+keeps playing and the reason appears in plain language.
 
 ## Status check
 

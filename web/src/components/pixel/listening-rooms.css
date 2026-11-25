@@ -1,0 +1,48 @@
+.desk-room .desk-camera {
+  position: absolute;
+  inset: -3px;
+  transform: translate(var(--desk-x, 0px), var(--desk-y, 0px));
+  transition: transform 420ms ease-out;
+}
+.desk-room::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(255 255 255 / 9%);
+  box-shadow: inset 2px 1px 1px rgb(255 255 255 / 8%);
+  pointer-events: none;
+}
+.desk-plate { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.desk-night { opacity: 0; transition: opacity 1.5s ease-in-out; }
+.desk-room[data-night="true"] .desk-night { opacity: 1; }
+.desk-steam { transform-origin: 567px 410px; animation: desk-steam 4s ease-in-out infinite alternate; }
+@keyframes desk-steam {
+  from { transform: skewX(-4deg) scale(.9,.86); opacity: .6; }
+  to { transform: skewX(4deg) scale(1.04,1.08); opacity: .94; }
+}
+.desk-mascot { animation: desk-hop 3.5s ease-in-out infinite; }
+@keyframes desk-hop { 0%,60%,100% { transform: translateY(0); } 80% { transform: translateY(-8px); } }
+.desk-game { animation: desk-walk 8s steps(20) infinite alternate; }
+@keyframes desk-walk { from { transform: translateX(32px); } to { transform: translateX(72px); } }
+.desk-breath { transform-origin: 490px 473px; animation: desk-breathe 4.8s ease-in-out infinite alternate; }
+@keyframes desk-breathe { to { transform: scale(1.006,1.015) rotate(.3deg); } }
+.desk-cursor { animation: desk-blink 1.6s steps(1) infinite; }
+@keyframes desk-blink { 55% { opacity: 0; } }
+.desk-terminal, .desk-signal { animation: desk-signal 4s steps(4) infinite alternate; }
+.desk-signal { animation-delay: -2s; }
+@keyframes desk-signal { from { opacity: .08; } to { opacity: .54; } }
+.desk-wisp { opacity: 0; animation: desk-rise 4s ease-out infinite; }
+.desk-wisp-alt { animation-delay: -2s; }
+@keyframes desk-rise {
+  0% { opacity: 0; transform: translate(0,4px); }
+  32% { opacity: .42; }
+  100% { opacity: 0; transform: translate(-4px,-16px); }
+}
+.desk-room:not([data-running="true"]) .desk-plate *,
+.desk-room[data-night="true"] .desk-day *,
+.desk-room[data-night="false"] .desk-night * { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .desk-room .desk-camera { transform: none; transition: none; }
+  .desk-night { transition: none; }
+  .desk-room .desk-plate * { animation: none; }
+}

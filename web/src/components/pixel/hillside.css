@@ -1,0 +1,122 @@
+.hillside {
+  --open-sky: #deeae4;
+  --cloud: #fff5d9;
+  --sun: #f0cf7c;
+  --sun-core: #f7e8ab;
+  --moon: #e3e6f0;
+  --ridge-far: #c2d6cb;
+  --ridge-near: #a9c4af;
+  --grove: #a0b99c;
+  --grass: #b2c79e;
+  --grass-shade: #a4b993;
+  --blades: #93ad85;
+  --pine: #839e80;
+  --needle: #97af8b;
+  --trunk: #7b896e;
+  --timber: #ac9675;
+  --timber-lit: #c2aa85;
+  --roof: #7d8878;
+  --shingle: #94a08c;
+  --opening: #575e53;
+  --pane: #b7cfca;
+  --path: #c6c7a3;
+  --radio: #ba5549;
+  --radio-highlight: #d97c62;
+  --antenna: #737e70;
+  --meter: #f0dc99;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  container-type: size;
+  background: var(--open-sky);
+  transition: background-color var(--motion-celestial, 3600ms) var(--ease-celestial, ease);
+}
+[data-theme="dark"] .hillside {
+  --open-sky: #1b203a;
+  --sun: #857b62;
+  --sun-core: #a29572;
+  --moon: #eef0f8;
+  --ridge-far: #303654;
+  --ridge-near: #383d60;
+  --grove: #32384f;
+  --grass: #303751;
+  --grass-shade: #2b324b;
+  --blades: #414761;
+  --pine: #252c43;
+  --needle: #323951;
+  --trunk: #292a3c;
+  --timber: #534953;
+  --timber-lit: #655963;
+  --roof: #353348;
+  --shingle: #504c61;
+  --opening: #292a39;
+  --pane: #f6c581;
+  --path: #42445b;
+  --radio: #ac514e;
+  --radio-highlight: #c47366;
+  --antenna: #86849a;
+  --meter: #eac995;
+}
+.hillside-ground, .hillside-weather {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: block;
+  width: max(100%, 680px, 134cqh);
+  height: auto;
+}
+.hillside-ground { bottom: 0; }
+.hillside-weather { top: 0; }
+.hillside-ground path, .hillside-ground g { transition: fill var(--motion-celestial, 3600ms) var(--ease-celestial, ease); }
+.hillside-clouds, .hillside-stars { transition: opacity var(--motion-celestial, 3600ms) var(--ease-celestial, ease); }
+.hillside-clouds { opacity: .8; animation: hillside-drift 85s linear infinite alternate; }
+@keyframes hillside-drift { from { transform: translateX(-18px); } to { transform: translateX(48px); } }
+.hillside-stars { opacity: 0; }
+[data-theme="dark"] .hillside-stars { opacity: .6; }
+[data-theme="dark"] .hillside-clouds { opacity: 0; animation-play-state: paused; }
+
+/* Sun and moon trade places over the ridge as the palette changes. */
+.hillside-orb {
+  position: absolute;
+  top: 0;
+  right: 13%;
+  display: block;
+  width: clamp(38px, 6.4cqh, 66px);
+  height: auto;
+  image-rendering: pixelated;
+  transition:
+    transform var(--motion-celestial, 3600ms) var(--ease-celestial, ease),
+    opacity var(--motion-celestial, 3600ms) var(--ease-celestial, ease);
+  will-change: transform;
+}
+.hillside-orb path,
+.hillside-orb rect {
+  transition: fill var(--motion-celestial, 3600ms) var(--ease-celestial, ease);
+}
+.hillside-sun { transform: translate3d(0, 9cqh, 0); }
+.hillside-moon {
+  right: 21%;
+  opacity: 0;
+  transform: translate3d(0, 88cqh, 0);
+}
+[data-theme="dark"] .hillside-sun {
+  opacity: 0;
+  transform: translate3d(0, 86cqh, 0);
+}
+[data-theme="dark"] .hillside-moon {
+  opacity: .9;
+  transform: translate3d(0, 8cqh, 0);
+}
+
+.hillside-bar { transform-box: fill-box; transform-origin: center bottom; transform: scaleY(.3333); }
+.hillside[data-playing="true"] .hillside-bar { animation: hillside-level .64s steps(1) infinite; }
+.hillside[data-playing="true"] .hillside-bar-b { animation-duration: .89s; animation-delay: -.31s; }
+@keyframes hillside-level { 0%, 85% { transform: scaleY(.3333); } 25%, 65% { transform: scaleY(.6667); } 45% { transform: scaleY(1); } }
+.hillside[data-sleep="true"] .hillside-clouds,
+.hillside[data-sleep="true"] .hillside-bar { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .hillside, .hillside * { transition: none !important; animation: none !important; }
+  .hillside[data-playing="true"] .hillside-bar-b { transform: scaleY(1); }
+}

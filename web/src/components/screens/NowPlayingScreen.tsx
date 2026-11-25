@@ -1,7 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
-  Play,
-  Pause,
   SkipBack,
   SkipForward,
   Volume2,
@@ -9,28 +7,33 @@ import {
   ChevronDown,
   Heart,
   AlignLeft,
+  Shuffle,
 } from 'lucide-react';
 import { Track } from '../../data/musicData';
-import { PixelArt } from '../pixel/PixelArt';
-import { LivingScene } from '../pixel/LivingScene';
+import { AmbientBackground } from '../pixel/AmbientBackground';
+import { Hillside } from '../pixel/Hillside';
+import { ArtworkCrossfade } from '../pixel/ArtworkCrossfade';
+import { PlayPauseIcon } from '../pixel/PlayPauseIcon';
 import { PixelFrame, PixelEqualizer, PixelChip } from '../pixel/ui';
-import { api, LyricsResult } from '../../api/client';
-import { frameToneFor, sceneFor } from '../../theme/pixel';
+import { SyncedLyrics } from './SyncedLyrics';
+import { frameToneFor } from '../../theme/pixel';
+import { useScrubber } from '../../hooks/useScrubber';
 
-interface NowPlayingScreenProps {
+export interface NowPlayingScreenProps {
   track: Track;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
   volume: number;
   isFavorite: boolean;
-  darkMode: boolean;
   onClose: () => void;
   onTogglePlay: () => void;
   onNext: () => void;
   onPrevious: () => void;
   onSeek: (time: number) => void;
   onVolumeChange: (volume: number) => void;
+  shuffle: boolean;
+  onToggleShuffle: () => void;
   onToggleFavorite: () => void;
 }
 
@@ -41,83 +44,24 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
   duration,
   volume,
   isFavorite,
-  darkMode,
   onClose,
   onTogglePlay,
   onNext,
   onPrevious,
   onSeek,
   onVolumeChange,
+  shuffle,
+  onToggleShuffle,
   onToggleFavorite,
 }) => {
   const [showLyrics, setShowLyrics] = useState(false);
-  const [lyricsState, setLyricsState] = useState<{
-    key: string; result: LyricsResult | null; loading: boolean; error: string | null;
-  } | null>(null);
-  const [lyricsRetry, setLyricsRetry] = useState(0);
-  const [followLyrics, setFollowLyrics] = useState(true);
-  const progressBarRef = useRef<HTMLDivElement>(null);
-  const activeLyricRef = useRef<HTMLButtonElement>(null);
-  const lyricSheetRef = useRef<HTMLDivElement>(null);
-  const lyricKey = `${track.source}:${track.id}:${track.title}:${track.artist}:${track.album}:${track.durationSec}`;
-  const lyrics = lyricsState?.key === lyricKey ? lyricsState.result : null;
-  const lyricsLoading = showLyrics && (lyricsState?.key !== lyricKey || lyricsState.loading);
-  const lyricsError = lyricsState?.key === lyricKey ? lyricsState.error : null;
-
-  useEffect(() => {
-    if (!showLyrics) return;
-    if (!track.id || !track.title || !track.artist) {
-      setLyricsState({ key: lyricKey, result: null, loading: false, error: null });
-      return;
-    }
-    let cancelled = false;
-    const abort = new AbortController();
-    setLyricsState({ key: lyricKey, result: null, loading: true, error: null });
-    const load = async () => {
-      try {
-        let result: LyricsResult | null = null;
-        if (track.source === 'Local') {
-          result = await api.lyrics(track.id, abort.signal);
-          if (result.synced?.length || result.plain) {
-            result = { ...result, provider: 'Embedded lyrics' };
-          }
-        }
-        if (!result?.synced?.length && !result?.plain) {
-          result = await api.catalogLyrics(track, abort.signal);
-        }
-        if (!cancelled) setLyricsState({ key: lyricKey, result, loading: false, error: null });
-      } catch {
-        if (!cancelled) setLyricsState({
-          key: lyricKey, result: null, loading: false,
-          error: 'Could not load lyrics. The library server or lyrics provider may be unavailable. Try again shortly.',
-        });
-      }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-      abort.abort();
-    };
-  }, [lyricKey, showLyrics, lyricsRetry]);
-
-  const synced = lyrics?.synced || [];
-  const activeIndex = synced.reduce(
-    (active, [time], index) => (time <= currentTime * 1000 ? index : active),
-    -1
-  );
-
-  useEffect(() => {
-    const sheet = lyricSheetRef.current;
-    const active = activeLyricRef.current;
-    if (showLyrics && followLyrics && activeIndex >= 0 && sheet && active) {
-      const top = sheet.scrollTop + active.getBoundingClientRect().top - sheet.getBoundingClientRect().top
-        - sheet.clientHeight / 2 + active.clientHeight / 2;
-      sheet.scrollTo({
-        top: Math.max(0, top),
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-      });
-    }
-  }, [activeIndex, showLyrics, followLyrics]);
+  const seed = track.albumId || track.id || 'empty-room';
+  const {
+    barRef: progressBarRef,
+    dragRatio,
+    isDragging: isScrubbing,
+    handlers: scrubHandlers,
+  } = useScrubber(duration, onSeek);
 
   const formatTime = (seconds: number) => {
     if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -127,27 +71,38 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
   };
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const shownPercent = dragRatio != null ? dragRatio * 100 : progressPercent;
+  const shownTime = dragRatio != null ? dragRatio * duration : currentTime;
 
-  const handleProgressClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressBarRef.current || duration <= 0) return;
-    const rect = progressBarRef.current.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickRatio = Math.max(0, Math.min(1, clickX / rect.width));
-    onSeek(clickRatio * duration);
-  };
-
-  const seed = track.albumId || track.id || 'empty-room';
+  // The same framed print is shared by the artwork view and the lyrics view,
+  // so the artwork flight still has a destination whichever one is open.
+  const artwork = (
+    <div className="np-art-frame">
+      <PixelFrame
+        tone={frameToneFor(seed)}
+        plaque={
+          <span className="np-art-plaque">
+            <strong>{track.album || 'Untitled album'}</strong>
+            <span>{track.source === 'Spotify' ? 'Spotify' : 'Pixel print'} · {track.year || '—'}</span>
+          </span>
+        }
+      >
+        <div className="piece-art" id="np-art-slot">
+          <ArtworkCrossfade
+            original={track.source === 'Spotify'}
+            src={track.coverUrl}
+            seed={seed}
+            alt={`${track.title} by ${track.artist}`}
+          />
+        </div>
+      </PixelFrame>
+    </div>
+  );
 
   return (
-    <div id="screen-now-playing" className="np-room">
-      <LivingScene
-        seed={seed}
-        variant={sceneFor(seed, 2)}
-        night={darkMode}
-        playing={isPlaying}
-        notes
-        label={`A living pixel landscape for ${track.title}`}
-      />
+    <div id="screen-now-playing" className="np-room" data-playing={isPlaying ? 'true' : 'false'}>
+      <Hillside playing={isPlaying} />
+      <AmbientBackground src={track.coverUrl} seed={seed} />
       <div className="np-veil" aria-hidden="true" />
 
       <div className="np-inner">
@@ -178,95 +133,19 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
         </div>
 
         {showLyrics ? (
-          <div className="np-lyrics-wrap">
-            <div className="np-lyrics" ref={lyricSheetRef} aria-label={`Lyrics for ${track.title}`} aria-busy={lyricsLoading}>
-              <div className="flex items-center justify-between gap-4 mb-4">
-                <span className="px-label">Lyric sheet</span>
-                <span className="px-label">{lyrics?.synced?.length ? 'Time-synced' : track.source}</span>
-              </div>
-              <div className="lyric-song-heading">
-                <strong>{track.title}</strong>
-                <span>{track.artist}</span>
-              </div>
-              {synced.length > 0 && (
-                <button className="px-switch lyric-follow" aria-pressed={followLyrics}
-                  onClick={() => setFollowLyrics((value) => !value)}>
-                  {followLyrics ? 'Auto-follow on' : 'Auto-follow off'}
-                </button>
-              )}
-              {synced.length > 0 ? (
-                synced.map(([time, line], index) => (
-                  <button
-                    type="button"
-                    key={index}
-                    ref={index === activeIndex ? activeLyricRef : undefined}
-                    className={`lyric-line ${index === activeIndex ? 'is-active' : ''}`}
-                    onClick={() => onSeek(time / 1000)}
-                    aria-current={index === activeIndex ? 'true' : undefined}
-                    title={`Jump to ${formatTime(time / 1000)}`}
-                  >
-                    {line || '♪'}
-                  </button>
-                ))
-              ) : lyrics?.plain ? (
-                lyrics.plain.split('\n').map((line, index) => (
-                  <p key={index} className="lyric-line is-plain">
-                    {line || '\u00a0'}
-                  </p>
-                ))
-              ) : (
-                <p className="text-sm" role="status" style={{ color: 'var(--muted)' }}>
-                  {lyricsLoading
-                    ? 'Finding lyrics…'
-                    : lyricsError
-                      ? lyricsError
-                      : lyrics?.instrumental
-                        ? 'An instrumental piece — no lyrics to sing.'
-                        : 'No matching lyrics found for this recording yet.'}
-                </p>
-              )}
-              {!lyricsLoading && (!lyrics || (!lyrics.synced?.length && !lyrics.plain && !lyrics.instrumental)) && (
-                <button className="pixel-btn ghost small mt-4" onClick={() => setLyricsRetry((value) => value + 1)}>
-                  Try again
-                </button>
-              )}
-              <div className="lyric-attribution">
-                {lyrics?.provider === 'Embedded lyrics' ? <span>From your file’s tags</span> : (
-                  <>
-                    <a href={lyrics?.providerUrl || 'https://lrclib.net'} target="_blank" rel="noreferrer">
-                      Lyrics via LRCLIB ↗
-                    </a>
-                    <span>Independent provider · availability and timing vary.</span>
-                  </>
-                )}
-              </div>
-            </div>
+          <div className="np-lyrics-stage">
+            <div className="np-lyrics-art">{artwork}</div>
+            <SyncedLyrics
+              track={track}
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              duration={duration}
+              onSeek={onSeek}
+            />
           </div>
         ) : (
           <div className="np-body">
-            <div className="np-art">
-              <div className="np-art-frame">
-                <PixelFrame
-                  tone={frameToneFor(seed)}
-                  plaque={
-                    <span className="np-art-plaque">
-                      <strong>{track.album || 'Untitled album'}</strong>
-                      <span>{track.source === 'Spotify' ? 'Spotify' : 'Pixel print'} · {track.year || '—'}</span>
-                    </span>
-                  }
-                >
-                  <div className="piece-art">
-                    <PixelArt
-                      original={track.source === 'Spotify'}
-                      src={track.coverUrl}
-                      seed={seed}
-                      alt={`${track.title} by ${track.artist}`}
-                      grid={64}
-                    />
-                  </div>
-                </PixelFrame>
-              </div>
-            </div>
+            <div className="np-art">{artwork}</div>
 
             <div className="np-info">
               <span className="px-label">Now playing</span>
@@ -303,13 +182,13 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
             <div className="np-progress">
               <div
                 ref={progressBarRef}
-                onClick={handleProgressClick}
-                className="px-progress"
+                {...scrubHandlers}
+                className={`px-progress ${isScrubbing ? 'is-dragging' : ''}`}
                 role="slider"
                 aria-label="Seek"
                 aria-valuemin={0}
                 aria-valuemax={Math.round(duration)}
-                aria-valuenow={Math.round(currentTime)}
+                aria-valuenow={Math.round(shownTime)}
                 tabIndex={0}
                 onKeyDown={(event) => {
                   if (event.key === 'ArrowRight') onSeek(Math.min(duration, currentTime + 5));
@@ -318,18 +197,27 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
               >
                 <div
                   className="px-progress-fill"
-                  style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }}
+                  style={{ width: `${Math.min(100, Math.max(0, shownPercent))}%` }}
                 >
                   <span className="px-progress-thumb" />
                 </div>
               </div>
               <div className="np-times">
-                <span>{formatTime(currentTime)}</span>
+                <span>{formatTime(shownTime)}</span>
                 <span>{formatTime(duration)}</span>
               </div>
             </div>
 
             <div className="np-transport">
+              <button
+                className={`np-step ${shuffle ? 'is-active' : ''}`}
+                onClick={onToggleShuffle}
+                title={shuffle ? 'Shuffle on' : 'Shuffle off'}
+                aria-label="Shuffle"
+                aria-pressed={shuffle}
+              >
+                <Shuffle size={17} strokeWidth={1.8} />
+              </button>
               <button className="np-step" onClick={onPrevious} title="Previous" aria-label="Previous">
                 <SkipBack size={19} strokeWidth={1.8} />
               </button>
@@ -339,11 +227,7 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
                 title={isPlaying ? 'Pause' : 'Play'}
                 aria-label={isPlaying ? 'Pause' : 'Play'}
               >
-                {isPlaying ? (
-                  <Pause size={20} strokeWidth={2} />
-                ) : (
-                  <Play size={20} strokeWidth={2} className="ml-0.5" />
-                )}
+                <PlayPauseIcon playing={isPlaying} size={20} strokeWidth={2} />
               </button>
               <button className="np-step" onClick={onNext} title="Next" aria-label="Next">
                 <SkipForward size={19} strokeWidth={1.8} />

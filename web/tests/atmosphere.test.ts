@@ -9,16 +9,15 @@ test('day lighting follows local morning, afternoon and golden hour', () => {
   assert.equal(dayPhase(2), 'daylight');
 });
 
-test('a 1080p retina viewport renders at native UHD resolution', () => {
-  assert.deepEqual(sceneResolution(1920, 1080, 2), { width: 3840, height: 2160, ratio: 2 });
+test('a framed city uses two CSS pixels per art pixel', () => {
+  assert.deepEqual(sceneResolution(480, 320), { width: 240, height: 160 });
 });
 
 test('canvas allocation stays bounded on very large and high-DPI displays', () => {
-  for (const [w, h, dpr] of [[3840, 2160, 3], [7680, 4320, 2], [390, 844, 3]]) {
-    const result = sceneResolution(w, h, dpr);
-    assert.ok(result.width <= 3840);
-    assert.ok(result.height <= 2160);
-    assert.ok(result.ratio <= 2);
+  for (const [w, h] of [[3840, 2160], [7680, 4320], [390, 844]]) {
+    const result = sceneResolution(w, h);
+    assert.ok(result.width <= 640 && result.height <= 320);
+    assert.ok(Math.abs(result.width / result.height - w / h) < .01);
   }
 });
 

@@ -18,11 +18,22 @@ class LocalAudioPlayer {
 
   async playUrl(url: string) {
     const a = this.ensure();
+    // Keep the current song recoverable if the new file cannot be loaded.
+    const previous = { src: a.src, time: a.currentTime, wasPlaying: !a.paused };
     a.pause();
     a.src = url;
     a.currentTime = 0;
     a.volume = this.volume;
-    await a.play();
+    try {
+      await a.play();
+    } catch (error) {
+      if (previous.src) {
+        a.src = previous.src;
+        a.currentTime = previous.time;
+        if (previous.wasPlaying) await a.play().catch(() => {});
+      }
+      throw error;
+    }
   }
 
   pause() {

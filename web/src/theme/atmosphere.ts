@@ -7,10 +7,10 @@ export function dayPhase(hour: number): DayPhase {
   return 'daylight';
 }
 
-/** High-DPI rendering up to native UHD, without allocating unbounded canvases. */
-export function sceneResolution(width: number, height: number, dpr: number) {
-  const ratio = Math.min(Math.max(1, dpr), 2, 3840 / Math.max(1, width), 2160 / Math.max(1, height));
-  return { ratio, width: Math.max(1, Math.round(width * ratio)), height: Math.max(1, Math.round(height * ratio)) };
+/** Native art grid; CSS scales these pixels without filtering, including on Retina. */
+export function sceneResolution(width: number, height: number) {
+  const ratio = Math.min(.5, 640 / Math.max(1, width), 320 / Math.max(1, height));
+  return { width: Math.max(1, Math.round(width * ratio)), height: Math.max(1, Math.round(height * ratio)) };
 }
 
 export function smoothstep(value: number) {

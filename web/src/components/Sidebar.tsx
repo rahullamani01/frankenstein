@@ -57,7 +57,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside id="app-sidebar" className="pixel-sidebar" aria-label="Main navigation">
-      <div className="flex flex-col min-h-0">
+      <div className="pixel-sidebar-scroll">
         <div className="pixel-window-bar">
           <div className="pixel-dots" aria-hidden="true">
             <span className="pixel-dot is-red" />

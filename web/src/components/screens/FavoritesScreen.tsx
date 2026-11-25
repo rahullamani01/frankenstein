@@ -1,4 +1,5 @@
 import React from 'react';
+import { Shuffle } from 'lucide-react';
 import { Track } from '../../data/musicData';
 import { ScreenHeader, TrackRow, TrackTableHead, EmptyGallery, PixelChip } from '../pixel/ui';
 
@@ -7,6 +8,7 @@ interface FavoritesScreenProps {
   currentTrackId?: string;
   isPlaying: boolean;
   onPlayTrack: (track: Track) => void;
+  onShufflePlay: () => void;
   onToggleFavorite: (trackId: string) => void;
 }
 
@@ -15,6 +17,7 @@ export const FavoritesScreen: React.FC<FavoritesScreenProps> = ({
   currentTrackId,
   isPlaying,
   onPlayTrack,
+  onShufflePlay,
   onToggleFavorite,
 }) => (
   <div id="screen-favorites" className="screen-wrap">
@@ -23,9 +26,20 @@ export const FavoritesScreen: React.FC<FavoritesScreenProps> = ({
       title="Favorites"
       subtitle="The pieces you keep coming back to."
       actions={
-        <PixelChip tone="moss">
-          {favoriteTracks.length} {favoriteTracks.length === 1 ? 'song' : 'songs'}
-        </PixelChip>
+        <>
+          <PixelChip tone="moss">
+            {favoriteTracks.length} {favoriteTracks.length === 1 ? 'song' : 'songs'}
+          </PixelChip>
+          <button
+            className="pixel-btn ghost small"
+            onClick={onShufflePlay}
+            disabled={favoriteTracks.length === 0}
+            title="Shuffle these favourites"
+          >
+            <Shuffle size={13} strokeWidth={2} />
+            <span>Shuffle</span>
+          </button>
+        </>
       }
     />
 

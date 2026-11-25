@@ -16,10 +16,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`${res.status} ${path}: ${text}`);
+    let message = text;
+    try {
+      const body = JSON.parse(text);
+      message = typeof body?.detail === "string"
+        ? body.detail
+        : Array.isArray(body?.detail)
+          ? body.detail.map((item: { msg?: string }) => item?.msg).filter(Boolean).join(", ")
+          : body?.error || body?.message || text;
+    } catch {
+      // Plain-text or proxy error page; fall through to the readable text.
+    }
+    if (/^\s*<!doctype|^\s*<html/i.test(text)) {
+      message = "The library server is not responding. Check that it is running.";
+    }
+    throw new Error(message || res.statusText || `Request failed (${res.status})`);
   }
   if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  const type = res.headers.get("content-type") || "";
+  if (!type.includes("application/json")) {
+    throw new Error("The library server sent an unexpected response. Check that it is running.");
+  }
+  try {
+    return await res.json() as T;
+  } catch {
+    throw new Error("The library server sent an unreadable response. Check that it is running.");
+  }
 }
 
 export type ApiTrack = {

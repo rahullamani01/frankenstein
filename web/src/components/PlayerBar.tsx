@@ -1,17 +1,18 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  Play,
-  Pause,
   SkipBack,
   SkipForward,
   Volume2,
   VolumeX,
   Maximize2,
   Heart,
+  Shuffle,
 } from 'lucide-react';
 import { Track } from '../data/musicData';
-import { PixelArt } from './pixel/PixelArt';
+import { ArtworkCrossfade } from './pixel/ArtworkCrossfade';
+import { PlayPauseIcon } from './pixel/PlayPauseIcon';
 import { PixelEqualizer, SourceTag } from './pixel/ui';
+import { useScrubber } from '../hooks/useScrubber';
 
 interface PlayerBarProps {
   currentTrack: Track | null;
@@ -25,6 +26,8 @@ interface PlayerBarProps {
   onPrevious: () => void;
   onSeek: (time: number) => void;
   onVolumeChange: (volume: number) => void;
+  shuffle: boolean;
+  onToggleShuffle: () => void;
   onToggleFavorite: () => void;
   onOpenNowPlaying: () => void;
 }
@@ -41,10 +44,83 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   onPrevious,
   onSeek,
   onVolumeChange,
+  shuffle,
+  onToggleShuffle,
   onToggleFavorite,
   onOpenNowPlaying,
 }) => {
-  const progressBarRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLElement | null>(null);
+  const swipe = useRef<{ active: boolean; pointerId: number; startY: number; dy: number } | null>(null);
+  const swipeCleanup = useRef<() => void>(() => {});
+  const {
+    barRef: progressBarRef,
+    dragRatio,
+    isDragging: isScrubbing,
+    handlers: scrubHandlers,
+  } = useScrubber(duration, onSeek);
+
+  const resetLift = () => {
+    const bar = barRef.current;
+    if (!bar) return;
+    bar.style.transition = `transform ${220}ms cubic-bezier(0.22, 0.61, 0.36, 1)`;
+    bar.style.transform = 'none';
+    bar.style.opacity = '';
+    window.setTimeout(() => {
+      if (barRef.current) barRef.current.style.transition = '';
+    }, 240);
+  };
+
+  const onSwipeMove = (event: PointerEvent) => {
+    const state = swipe.current;
+    if (!state?.active || event.pointerId !== state.pointerId) return;
+    const bar = barRef.current;
+    if (!bar) return;
+    const raw = event.clientY - state.startY;
+    state.dy = raw;
+    const lift = Math.max(-14, Math.min(0, raw * 0.32));
+    bar.style.transition = 'none';
+    bar.style.transform = `translateY(${lift}px)`;
+    bar.style.opacity = String(1 + lift / 90);
+    if (event.cancelable && raw < -4) event.preventDefault();
+  };
+
+  const onSwipeEnd = () => {
+    const state = swipe.current;
+    const shouldOpen = Boolean(state && state.dy < -34);
+    swipeCleanup.current();
+    if (shouldOpen) {
+      resetLift();
+      onOpenNowPlaying();
+      return;
+    }
+    resetLift();
+  };
+
+  const onSwipeStart = (event: React.PointerEvent<HTMLElement>) => {
+    const target = event.target as Element;
+    if (target.closest('button, a, input, [role="slider"]')) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    swipe.current = {
+      active: true,
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      dy: 0,
+    };
+    window.addEventListener('pointermove', onSwipeMove, { passive: false });
+    window.addEventListener('pointerup', onSwipeEnd);
+    window.addEventListener('pointercancel', onSwipeEnd);
+    swipeCleanup.current = () => {
+      window.removeEventListener('pointermove', onSwipeMove);
+      window.removeEventListener('pointerup', onSwipeEnd);
+      window.removeEventListener('pointercancel', onSwipeEnd);
+      if (swipe.current) swipe.current.active = false;
+    };
+  };
+
+  useEffect(() => () => {
+    swipeCleanup.current();
+    resetLift();
+  }, []);
 
   const formatTime = (seconds: number) => {
     if (isNaN(seconds) || seconds < 0) return '0:00';
@@ -54,18 +130,12 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   };
 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
-
-  const handleProgressClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressBarRef.current || duration <= 0) return;
-    const rect = progressBarRef.current.getBoundingClientRect();
-    const clickX = event.clientX - rect.left;
-    const clickRatio = Math.max(0, Math.min(1, clickX / rect.width));
-    onSeek(clickRatio * duration);
-  };
+  const shownPercent = dragRatio != null ? dragRatio * 100 : progressPercent;
+  const shownTime = dragRatio != null ? dragRatio * duration : currentTime;
 
   if (!currentTrack) {
     return (
-      <footer id="app-player-bar" className="pixel-player">
+      <footer id="app-player-bar" className="pixel-player" ref={barRef}>
         <div className="flex items-center gap-3">
           <div className="player-thumb flex items-center justify-center font-[family-name:var(--font-pixel)] text-[11px] text-[color:var(--muted)]">
             ♪
@@ -84,15 +154,21 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   }
 
   return (
-    <footer id="app-player-bar" className="pixel-player">
+    <footer
+      id="app-player-bar"
+      className="pixel-player"
+      ref={barRef}
+      onPointerDown={onSwipeStart}
+    >
       <div className="player-left">
         <button
+          id="player-thumb-art"
           onClick={onOpenNowPlaying}
           className="player-thumb"
           title="Open now playing"
           aria-label="Open now playing"
         >
-          <PixelArt
+          <ArtworkCrossfade
             original={currentTrack.source === 'Spotify'}
             src={currentTrack.coverUrl}
             seed={currentTrack.albumId || currentTrack.id}
@@ -127,6 +203,15 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
 
       <div className="player-center">
         <div className="player-transport">
+          <button
+            className={`player-step ${shuffle ? 'is-active' : ''}`}
+            onClick={onToggleShuffle}
+            title={shuffle ? 'Shuffle on' : 'Shuffle off'}
+            aria-label="Shuffle"
+            aria-pressed={shuffle}
+          >
+            <Shuffle size={14} strokeWidth={1.8} />
+          </button>
           <button className="player-step" onClick={onPrevious} title="Previous track" aria-label="Previous track">
             <SkipBack size={15} strokeWidth={1.8} />
           </button>
@@ -137,11 +222,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
             title={isPlaying ? 'Pause' : 'Play'}
             aria-label={isPlaying ? 'Pause' : 'Play'}
           >
-            {isPlaying ? (
-              <Pause size={15} strokeWidth={2} />
-            ) : (
-              <Play size={15} strokeWidth={2} className="ml-0.5" />
-            )}
+            <PlayPauseIcon playing={isPlaying} size={15} strokeWidth={2} />
           </button>
           <button className="player-step" onClick={onNext} title="Next track" aria-label="Next track">
             <SkipForward size={15} strokeWidth={1.8} />
@@ -149,16 +230,16 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         </div>
 
         <div className="player-progress-row">
-          <span>{formatTime(currentTime)}</span>
+          <span>{formatTime(shownTime)}</span>
           <div
             ref={progressBarRef}
-            onClick={handleProgressClick}
-            className="px-progress"
+            {...scrubHandlers}
+            className={`px-progress ${isScrubbing ? 'is-dragging' : ''}`}
             role="slider"
             aria-label="Seek"
             aria-valuemin={0}
             aria-valuemax={Math.round(duration)}
-            aria-valuenow={Math.round(currentTime)}
+            aria-valuenow={Math.round(shownTime)}
             tabIndex={0}
             onKeyDown={(event) => {
               if (event.key === 'ArrowRight') onSeek(Math.min(duration, currentTime + 5));
@@ -167,7 +248,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           >
             <div
               className="px-progress-fill"
-              style={{ width: `${Math.min(100, Math.max(0, progressPercent))}%` }}
+              style={{ width: `${Math.min(100, Math.max(0, shownPercent))}%` }}
             >
               <span className="px-progress-thumb" />
             </div>

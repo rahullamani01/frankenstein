@@ -14,7 +14,6 @@ import { frameToneFor } from '../../theme/pixel';
 interface LibraryScreenProps {
   tracks: Track[];
   albums: Album[];
-  artists: Artist[];
   currentTrackId?: string;
   isPlaying: boolean;
   onPlayTrack: (track: Track) => void;
@@ -24,8 +23,7 @@ interface LibraryScreenProps {
 
 export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   tracks,
-  albums,
-  artists,
+  albums: allAlbums,
   currentTrackId,
   isPlaying,
   onPlayTrack,
@@ -33,13 +31,24 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   onToggleFavorite,
 }) => {
   const [activeTab, setActiveTab] = useState<'songs' | 'albums' | 'artists'>('songs');
+  const albumIds = new Set(tracks.map((track) => track.albumId));
+  const albums = allAlbums.filter((album) => albumIds.has(album.id)).map((album) => ({
+    ...album,
+    trackCount: tracks.filter((track) => track.albumId === album.id).length,
+  }));
+  const artists: Artist[] = [...new Set(tracks.map((track) => track.artist))].map((name) => ({
+    id: name,
+    name,
+    trackCount: tracks.filter((track) => track.artist === name).length,
+    albumCount: new Set(tracks.filter((track) => track.artist === name).map((track) => track.albumId)).size,
+  }));
 
   return (
     <div id="screen-library" className="screen-wrap">
       <ScreenHeader
-        eyebrow="The archive"
+        eyebrow="Recently played"
         title="Library"
-        subtitle={`${tracks.length} songs · ${albums.length} albums · ${artists.length} artists, all filed by hand`}
+        subtitle={`${tracks.length} recent songs · ${albums.length} albums · ${artists.length} artists`}
         actions={
           <div className="px-tabs" role="tablist" aria-label="Library views">
             {(['songs', 'albums', 'artists'] as const).map((tab) => (
@@ -61,9 +70,8 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
         <>
           {tracks.length === 0 ? (
             <EmptyGallery
-              title="No songs filed yet"
-              body="Import a folder from the backend and every track will be catalogued here, ready to hang."
-              hint="POST /api/library/scan with your music folder"
+               title="No recent songs yet"
+               body="Play something from Spotify or Apple Music. Your most recent songs will appear here."
             />
           ) : (
             <div className="px-table">
@@ -89,7 +97,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
           {albums.length === 0 ? (
             <EmptyGallery
               title="No albums framed yet"
-              body="Albums appear here as soon as the library scanner finds embedded artwork and tags."
+               body="Albums from your recently played songs will appear here."
             />
           ) : (
             <div className="px-album-grid">
@@ -98,6 +106,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                   key={album.id}
                   type="button"
                   className="gallery-piece"
+                  data-album-id={album.id}
                   onClick={() => onSelectAlbum(album.id)}
                   title={`Open ${album.title}`}
                 >
@@ -141,7 +150,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
           {artists.length === 0 ? (
             <EmptyGallery
               title="No artists in the ledger"
-              body="Once tracks are indexed, the artists who made them will be listed here."
+              body="Artists from your recently played songs will appear here."
             />
           ) : (
             <div className="px-table">

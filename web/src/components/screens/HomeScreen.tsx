@@ -2,9 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { ArrowRight, Play, Shuffle, Moon, Sun } from 'lucide-react';
 import { Album, Track } from '../../data/musicData';
 import { LivingScene } from '../pixel/LivingScene';
+import { CityScene } from '../pixel/CityScene';
 import { PixelArt } from '../pixel/PixelArt';
 import { PixelFrame, PixelEqualizer, EmptyGallery } from '../pixel/ui';
-import { SCENE_KINDS, frameToneFor } from '../../theme/pixel';
+import { frameToneFor } from '../../theme/pixel';
 import { dayPhase } from '../../theme/atmosphere';
 
 interface HomeScreenProps {
@@ -35,7 +36,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   onPlayTrack,
   onOpenNowPlaying,
 }) => {
-  const [sceneIndex, setSceneIndex] = useState(0);
+  const [cityView, setCityView] = useState(false);
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 
@@ -51,11 +52,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   }, [recentlyPlayedAlbums, recentlyAddedAlbums, albums]);
 
   const artistCount = new Set(tracks.map((track) => track.artist)).size;
-  const scene = SCENE_KINDS[sceneIndex % SCENE_KINDS.length];
   const nowAlbumId = currentTrack?.albumId;
   const heroSeed = currentTrack?.albumId || currentTrack?.id || 'gallery-hero';
 
-  const cycleScene = () => setSceneIndex((index) => (index + 1) % SCENE_KINDS.length);
+  const cycleScene = () => setCityView((value) => !value);
 
   return (
     <div id="screen-home" className="gallery-home">
@@ -74,7 +74,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </h1>
           <p className="hero-sub">
             {darkMode
-              ? 'Let the stars drift. Put on something you love.'
+              ? 'Settle in. Put on something you love.'
               : 'Your music, a little fresh air, and nowhere else to be.'}
           </p>
           <div className="hero-actions">
@@ -96,13 +96,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
         <div className="scene-exhibit">
           <div className="gallery-hero">
-            <LivingScene seed={heroSeed} variant={scene} night={darkMode}
-              label={darkMode ? 'Drifting stars and a softly glowing galaxy' : 'A sunlit landscape with slowly drifting clouds'} />
+            {cityView
+              ? <CityScene seed={heroSeed} night={darkMode} label="A living pixel city" />
+              : <LivingScene night={darkMode} label={darkMode ? 'A sleeping minifigure beside softly glowing terminals' : 'A laptop, handheld game and steaming coffee on a forest desk'} />}
           </div>
           <div className="scene-toolbar">
             <span className="scene-caption">
               {darkMode ? <Moon size={13} /> : <Sun size={13} />}
-              {darkMode ? 'After hours' : dayPhase(hour)} <span className="scene-caption-dot">·</span> {scene}
+              {darkMode ? 'After hours' : dayPhase(hour)} <span className="scene-caption-dot">·</span> {cityView ? 'City' : darkMode ? 'Sleeping desk' : 'Forest desk'}
             </span>
             <button type="button" className="scene-wander" onClick={cycleScene} title="Explore another landscape">
               <Shuffle size={12} /> Change view
@@ -160,6 +161,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   key={album.id}
                   type="button"
                   className={`gallery-piece ${isNow ? 'is-now' : ''}`}
+                  data-album-id={album.id}
                   onClick={() => onSelectAlbum(album.id)}
                   title={`Open ${album.title}`}
                 >

@@ -1,10 +1,10 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ArrowLeft, Play, Pause } from 'lucide-react';
 import { Album, Track } from '../../data/musicData';
 import { PixelArt } from '../pixel/PixelArt';
 import { LivingScene } from '../pixel/LivingScene';
 import { PixelFrame, PixelChip, SourceTag, TrackRow, TrackTableHead } from '../pixel/ui';
-import { frameToneFor, sceneFor } from '../../theme/pixel';
+import { frameToneFor } from '../../theme/pixel';
 
 interface AlbumViewScreenProps {
   album: Album;
@@ -31,9 +31,36 @@ export const AlbumViewScreen: React.FC<AlbumViewScreenProps> = ({
 }) => {
   const isAlbumPlaying = isPlaying && albumTracks.some((track) => track.id === currentTrackId);
   const seed = album.id || album.title;
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // The banner drifts a little slower than the list, and the cover lifts a
+  // hair as the page scrolls. Capped and rAF-throttled, never hijacking the
+  // platform's own scrolling.
+  useEffect(() => {
+    const root = rootRef.current;
+    const scroller = root?.closest('#app-main-content') as HTMLElement | null;
+    if (!root || !scroller) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const scroll = Math.max(0, scroller.scrollTop);
+      root.style.setProperty('--album-scroll', String(scroll));
+      root.style.setProperty('--album-parallax', `${Math.min(6, scroll * 0.05).toFixed(2)}px`);
+      root.style.setProperty('--album-lift', `${-Math.min(18, scroll * 0.06).toFixed(2)}px`);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener('scroll', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [album.id]);
 
   return (
-    <div id="screen-album-view" className="screen-wrap">
+    <div id="screen-album-view" className="screen-wrap" ref={rootRef}>
       <div className="mb-4">
         <button onClick={onBack} className="pixel-btn ghost small">
           <ArrowLeft size={13} strokeWidth={2} />
@@ -43,12 +70,7 @@ export const AlbumViewScreen: React.FC<AlbumViewScreenProps> = ({
 
       <div className="album-banner">
         <LivingScene
-          seed={seed}
-          variant={sceneFor(seed, 1)}
           night={darkMode}
-          playing={isPlaying}
-          interactive={false}
-          notes={false}
           label="A quiet pixel view behind the album"
         />
         <div className="album-banner-veil" aria-hidden="true" />
@@ -72,7 +94,7 @@ export const AlbumViewScreen: React.FC<AlbumViewScreenProps> = ({
               </span>
             }
           >
-            <div className="piece-art">
+            <div className="piece-art" id="album-art-slot">
               <PixelArt
                 original={album.source === 'Spotify'}
                 src={album.coverUrl}
