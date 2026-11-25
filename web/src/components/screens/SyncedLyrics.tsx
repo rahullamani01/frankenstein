@@ -32,7 +32,7 @@ import {
  */
 export const WORD_HIGHLIGHT = true;
 
-const TARGET_RATIO = 0.32;
+const TARGET_RATIO = 0.24;
 const GAP_THRESHOLD = 5;
 const AUTO_RESUME_MS = 4000;
 const LYRIC_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
