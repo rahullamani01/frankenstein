@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
-import { ArrowLeft, Heart, ListMusic, Mic2, MoreHorizontal, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Heart, ListMusic, Mic2, MoreHorizontal, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import type { Track } from '../data/musicData';
 import { useAmbientPalette } from '../hooks/useAmbientPalette';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -92,6 +92,8 @@ export function DiscoveryScene({
   const bgTimer = useRef(0);
   const audio = useRef<HTMLAudioElement | null>(null);
   const selected = cards[index] ?? cards[0];
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   const palette = useAmbientPalette(selected?.coverUrl, selected?.albumId || selected?.id || track.id);
   const previewUrl = selected?.previewUrl;
 
@@ -139,6 +141,10 @@ export function DiscoveryScene({
     window.clearTimeout(leaveTimer.current);
     leaveTimer.current = window.setTimeout(action, reduced ? 0 : 480);
   }, [cancelCountdown, reduced]);
+  const exitRef = useRef(exit);
+  exitRef.current = exit;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => () => {
     window.clearTimeout(leaveTimer.current);
@@ -198,23 +204,37 @@ export function DiscoveryScene({
     setMenu(false);
     setIndex((value) => Math.max(0, Math.min(cards.length - 1, value + direction)));
   };
+  const moveRef = useRef(move);
+  moveRef.current = move;
 
-  const handleKey = (event: React.KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation();
-      exit(onClose);
-    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-      event.preventDefault();
-      move(event.key === 'ArrowRight' ? 1 : -1);
-    } else if (event.key === 'Enter' && selected
-      && (event.target === container.current || (event.target as Element).closest('.discovery-card'))) {
-      event.preventDefault();
-      exit(() => playRef.current(selected));
-    }
-  };
+  // Listen on the window so the arrows still work if focus drifts outside the
+  // scene (another panel, the now-playing sheet, or a second window).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (leavingRef.current) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        exitRef.current(onCloseRef.current);
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        moveRef.current(event.key === 'ArrowRight' ? 1 : -1);
+      } else if (event.key === 'Enter' && selectedRef.current
+        && (target === container.current || target?.closest('.discovery-card'))) {
+        event.preventDefault();
+        const chosen = selectedRef.current;
+        exitRef.current(() => playRef.current(chosen));
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
 
   const handlePointerDown = (event: PointerEvent) => {
-    if ((event.target as Element).closest('.discovery-controls, .discovery-header, .discovery-card-menu-wrap')) return;
+    if ((event.target as Element).closest('.discovery-controls, .discovery-header, .discovery-card-menu-wrap, .discovery-nav')) return;
     gesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
   };
   const handlePointerUp = (event: PointerEvent) => {
@@ -251,7 +271,6 @@ export function DiscoveryScene({
       aria-modal="true"
       aria-label="Up next and similar songs"
       tabIndex={-1}
-      onKeyDown={handleKey}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
       onPointerMove={onPointerMove}
@@ -378,6 +397,16 @@ export function DiscoveryScene({
             </div>
           );
         })}
+        {cards.length > 1 && (
+          <div className="discovery-nav">
+            <button type="button" className="discovery-nav-btn" aria-label="Previous recommendation" disabled={index <= 0} onClick={() => move(-1)}>
+              <ChevronLeft size={22} />
+            </button>
+            <button type="button" className="discovery-nav-btn" aria-label="Next recommendation" disabled={index >= cards.length - 1} onClick={() => move(1)}>
+              <ChevronRight size={22} />
+            </button>
+          </div>
+        )}
       </div>
 
       <nav className="discovery-controls" aria-label="Playback controls">
