@@ -32,7 +32,6 @@ import {
  */
 export const WORD_HIGHLIGHT = true;
 
-const TARGET_RATIO = 0.24;
 const GAP_THRESHOLD = 5;
 const AUTO_RESUME_MS = 4000;
 const LYRIC_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
@@ -179,13 +178,27 @@ const LyricsBody: React.FC<LyricsBodyProps> = ({
     return Math.min(max, Math.max(min, value));
   }, []);
 
+  // Pin the active line to the top edge of the artwork beside it. The lyrics
+  // sheet keeps its full height so later lines still flow underneath, while
+  // the toolbar and earlier lines stay above the anchor.
+  const anchorFor = useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return 0;
+    const art = viewport
+      .closest('.np-lyrics-stage')
+      ?.querySelector('.np-lyrics-art .np-art-frame');
+    if (!(art instanceof HTMLElement)) return 0;
+    const offset = art.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+    return Math.max(0, offset);
+  }, []);
+
   const targetFor = useCallback((index: number) => {
     const viewport = viewportRef.current;
     if (!viewport || index < 0) return 0;
     const row = rowRefs.current[index];
     const top = row ? row.offsetTop : offsetsRef.current[index] ?? 0;
-    return viewport.clientHeight * TARGET_RATIO - top;
-  }, []);
+    return anchorFor() - top;
+  }, [anchorFor]);
 
   const measure = useCallback(() => {
     offsetsRef.current = rowRefs.current.map((row) => (row ? row.offsetTop : 0));

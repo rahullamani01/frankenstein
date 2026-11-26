@@ -12,13 +12,12 @@ import {
 } from 'lucide-react';
 import { Track } from '../../data/musicData';
 import { AmbientBackground } from '../pixel/AmbientBackground';
-import { Hillside } from '../pixel/Hillside';
 import { ArtworkCrossfade } from '../pixel/ArtworkCrossfade';
 import { PlayPauseIcon } from '../pixel/PlayPauseIcon';
-import { PixelFrame, PixelEqualizer, PixelChip } from '../pixel/ui';
+import { PixelEqualizer, PixelChip } from '../pixel/ui';
 import { SyncedLyrics } from './SyncedLyrics';
-import { frameToneFor } from '../../theme/pixel';
 import { useScrubber } from '../../hooks/useScrubber';
+import './now-playing-cinematic.css';
 
 export interface NowPlayingScreenProps {
   track: Track;
@@ -86,34 +85,109 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
   const shownPercent = dragRatio != null ? dragRatio * 100 : progressPercent;
   const shownTime = dragRatio != null ? dragRatio * duration : currentTime;
 
-  // The same framed print is shared by the artwork view and the lyrics view,
-  // so the artwork flight still has a destination whichever one is open.
+  // The artwork slot remains the shared-flight target in both views.
   const artwork = (
     <div className="np-art-frame">
-      <PixelFrame
-        tone={frameToneFor(seed)}
-        plaque={
-          <span className="np-art-plaque">
-            <strong>{track.album || 'Untitled album'}</strong>
-            <span>{track.source === 'Spotify' ? 'Spotify' : 'Pixel print'} · {track.year || '—'}</span>
-          </span>
-        }
-      >
-        <div className="piece-art" id="np-art-slot">
-          <ArtworkCrossfade
-            original={track.source === 'Spotify'}
-            src={track.coverUrl}
-            seed={seed}
-            alt={`${track.title} by ${track.artist}`}
+      <div className="piece-art" id="np-art-slot">
+        <ArtworkCrossfade
+          original={Boolean(track.coverUrl)}
+          src={track.coverUrl}
+          seed={seed}
+          alt={`${track.title} by ${track.artist}`}
+        />
+      </div>
+    </div>
+  );
+
+  const controls = (
+    <div className="np-controls">
+      <div className="np-controls-inner">
+        <div className="np-progress">
+          <div
+            ref={progressBarRef}
+            {...scrubHandlers}
+            className={`px-progress ${isScrubbing ? 'is-dragging' : ''}`}
+            role="slider"
+            aria-label="Seek"
+            aria-valuemin={0}
+            aria-valuemax={Math.round(duration)}
+            aria-valuenow={Math.round(shownTime)}
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowRight') onSeek(Math.min(duration, currentTime + 5));
+              if (event.key === 'ArrowLeft') onSeek(Math.max(0, currentTime - 5));
+            }}
+          >
+            <div
+              className="px-progress-fill"
+              style={{ width: `${Math.min(100, Math.max(0, shownPercent))}%` }}
+            >
+              <span className="px-progress-thumb" />
+            </div>
+          </div>
+          <div className="np-times">
+            <span>{formatTime(shownTime)}</span>
+            <span>{formatTime(duration)}</span>
+          </div>
+        </div>
+
+        <div className="np-transport">
+          <button
+            className={`np-step ${shuffle ? 'is-active' : ''}`}
+            onClick={onToggleShuffle}
+            title={shuffle ? 'Shuffle on' : 'Shuffle off'}
+            aria-label="Shuffle"
+            aria-pressed={shuffle}
+          >
+            <Shuffle size={20} strokeWidth={1.8} />
+          </button>
+          <button className="np-step" onClick={onPrevious} title="Previous" aria-label="Previous">
+            <SkipBack size={22} strokeWidth={1.8} fill="currentColor" />
+          </button>
+          <button
+            onClick={onTogglePlay}
+            className="np-play"
+            title={isPlaying ? 'Pause' : 'Play'}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+          >
+            <PlayPauseIcon playing={isPlaying} size={25} strokeWidth={2} />
+          </button>
+          <button className="np-step" onClick={onNext} title="Next" aria-label="Next">
+            <SkipForward size={22} strokeWidth={1.8} fill="currentColor" />
+          </button>
+        </div>
+
+        <div className="np-volume">
+          <button
+            onClick={() => onVolumeChange(volume === 0 ? 0.7 : 0)}
+            className="px-icon-btn"
+            title={volume === 0 ? 'Unmute' : 'Mute'}
+            aria-label={volume === 0 ? 'Unmute' : 'Mute'}
+          >
+            {volume === 0 ? (
+              <VolumeX size={18} strokeWidth={1.8} />
+            ) : (
+              <Volume2 size={18} strokeWidth={1.8} />
+            )}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={volume}
+            onChange={(event) => onVolumeChange(parseFloat(event.target.value))}
+            className="px-range"
+            title="Volume"
+            aria-label="Volume"
           />
         </div>
-      </PixelFrame>
+      </div>
     </div>
   );
 
   return (
-    <div id="screen-now-playing" className="np-room" data-playing={isPlaying ? 'true' : 'false'}>
-      <Hillside playing={isPlaying} />
+    <div id="screen-now-playing" className="np-room" data-playing={isPlaying ? 'true' : 'false'} data-lyrics={showLyrics ? 'true' : 'false'}>
       <AmbientBackground src={track.coverUrl} seed={seed} />
       <div className="np-veil" aria-hidden="true" />
 
@@ -171,119 +245,34 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
             <div className="np-art">{artwork}</div>
 
             <div className="np-info">
-              <span className="px-label">Now playing</span>
-              <div className="flex items-start gap-2">
+              <div className="np-live-row">
+                <PixelEqualizer playing={isPlaying} />
+                <span className="np-live-label">{isPlaying ? 'Now playing' : 'Paused'}</span>
+              </div>
+              <div className="np-title-row">
                 <h2 className="np-title" title={track.title}>{track.title || 'Nothing playing'}</h2>
                 <button
                   onClick={onToggleFavorite}
-                  className={`px-icon-btn mt-2 ${isFavorite ? 'is-fav' : ''}`}
+                  className={`px-icon-btn np-favorite ${isFavorite ? 'is-fav' : ''}`}
                   title={isFavorite ? 'Remove favorite' : 'Add favorite'}
                   aria-label={isFavorite ? 'Remove favorite' : 'Add favorite'}
                 >
-                  <Heart size={16} strokeWidth={1.8} fill={isFavorite ? 'currentColor' : 'none'} />
+                  <Heart size={24} strokeWidth={1.8} fill={isFavorite ? 'currentColor' : 'none'} />
                 </button>
               </div>
 
               <p className="np-meta">
                 <b>{track.artist || 'Unknown artist'}</b>
-                {track.album ? <> — {track.album}</> : null}
+                {track.album ? <> · {track.album}</> : null}
                 {track.year ? <> · {track.year}</> : null}
               </p>
 
-              <div className="np-live-row">
-                <PixelEqualizer playing={isPlaying} />
-                <span className="px-label">
-                  {isPlaying ? 'Playing' : 'Paused'}
-                </span>
-              </div>
+              {controls}
             </div>
           </div>
         )}
 
-        <div className="np-controls">
-          <div className="np-controls-inner">
-            <div className="np-progress">
-              <div
-                ref={progressBarRef}
-                {...scrubHandlers}
-                className={`px-progress ${isScrubbing ? 'is-dragging' : ''}`}
-                role="slider"
-                aria-label="Seek"
-                aria-valuemin={0}
-                aria-valuemax={Math.round(duration)}
-                aria-valuenow={Math.round(shownTime)}
-                tabIndex={0}
-                onKeyDown={(event) => {
-                  if (event.key === 'ArrowRight') onSeek(Math.min(duration, currentTime + 5));
-                  if (event.key === 'ArrowLeft') onSeek(Math.max(0, currentTime - 5));
-                }}
-              >
-                <div
-                  className="px-progress-fill"
-                  style={{ width: `${Math.min(100, Math.max(0, shownPercent))}%` }}
-                >
-                  <span className="px-progress-thumb" />
-                </div>
-              </div>
-              <div className="np-times">
-                <span>{formatTime(shownTime)}</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-            </div>
-
-            <div className="np-transport">
-              <button
-                className={`np-step ${shuffle ? 'is-active' : ''}`}
-                onClick={onToggleShuffle}
-                title={shuffle ? 'Shuffle on' : 'Shuffle off'}
-                aria-label="Shuffle"
-                aria-pressed={shuffle}
-              >
-                <Shuffle size={17} strokeWidth={1.8} />
-              </button>
-              <button className="np-step" onClick={onPrevious} title="Previous" aria-label="Previous">
-                <SkipBack size={19} strokeWidth={1.8} />
-              </button>
-              <button
-                onClick={onTogglePlay}
-                className="np-play"
-                title={isPlaying ? 'Pause' : 'Play'}
-                aria-label={isPlaying ? 'Pause' : 'Play'}
-              >
-                <PlayPauseIcon playing={isPlaying} size={20} strokeWidth={2} />
-              </button>
-              <button className="np-step" onClick={onNext} title="Next" aria-label="Next">
-                <SkipForward size={19} strokeWidth={1.8} />
-              </button>
-
-              <div className="np-volume ml-auto">
-                <button
-                  onClick={() => onVolumeChange(volume === 0 ? 0.7 : 0)}
-                  className="px-icon-btn"
-                  title={volume === 0 ? 'Unmute' : 'Mute'}
-                  aria-label={volume === 0 ? 'Unmute' : 'Mute'}
-                >
-                  {volume === 0 ? (
-                    <VolumeX size={14} strokeWidth={1.8} />
-                  ) : (
-                    <Volume2 size={14} strokeWidth={1.8} />
-                  )}
-                </button>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={volume}
-                  onChange={(event) => onVolumeChange(parseFloat(event.target.value))}
-                  className="px-range"
-                  title="Volume"
-                  aria-label="Volume"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+        {showLyrics && controls}
       </div>
     </div>
   );
