@@ -10,6 +10,8 @@ import {
   Shuffle,
   Repeat2,
   Compass,
+  Sparkles,
+  ListMusic,
 } from 'lucide-react';
 import { Track } from '../../data/musicData';
 import { AmbientBackground } from '../pixel/AmbientBackground';
@@ -41,6 +43,10 @@ export interface NowPlayingScreenProps {
   onDiscoverSimilar: () => void;
   showRecommendations: boolean;
   onShowRecommendationsChange: (value: boolean) => void;
+  autoplay: boolean;
+  onToggleAutoplay: () => void;
+  onOpenQueue: () => void;
+  queueCount: number;
   lyricsRequested?: number;
 }
 
@@ -65,6 +71,10 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
   onDiscoverSimilar,
   showRecommendations,
   onShowRecommendationsChange,
+  autoplay,
+  onToggleAutoplay,
+  onOpenQueue,
+  queueCount,
   lyricsRequested,
 }) => {
   const [showLyrics, setShowLyrics] = useState(false);
@@ -220,6 +230,17 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
             <button type="button" className="pixel-btn ghost small" onClick={onDiscoverSimilar} disabled={!track.id} title="Discover similar songs">
               <Compass size={14} strokeWidth={1.8} />
               <span>Discover similar</span>
+            </button>
+            <button type="button" className={`pixel-btn small ${autoplay ? '' : 'ghost'}`}
+              onClick={onToggleAutoplay} aria-pressed={autoplay}
+              title={autoplay ? 'Autoplay on' : 'Autoplay off'}>
+              <Sparkles size={14} strokeWidth={1.8} />
+              <span>Autoplay</span>
+            </button>
+            <button type="button" className="pixel-btn ghost small" onClick={onOpenQueue}
+              title="Open the queue" aria-label={`Open the queue${queueCount ? `, ${queueCount} songs waiting` : ''}`}>
+              <ListMusic size={14} strokeWidth={1.8} />
+              <span>Queue{queueCount ? ` ${queueCount}` : ''}</span>
             </button>
             <label className="np-recommend-setting" title="Show recommendations after a song ends">
               <input type="checkbox" checked={showRecommendations} onChange={(event) => onShowRecommendationsChange(event.target.checked)} />

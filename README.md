@@ -88,11 +88,17 @@ npm run dev
 
 Open http://127.0.0.1:3001 — the pixel gallery, now talking to the real backend.
 
-### Up next / similar songs
+### Up next / similar / autoplay
 
-The now-playing view has **Discover similar**. When a track ends, the scene opens
-automatically (unless **After song ends** is unchecked). Its playback, queue,
-autoplay and preview controls save their settings locally in this browser.
+**Autoplay** is on by default. When a single song, search result or the last track
+of an album/playlist ends, the player keeps going with a drifting queue built
+from the last few songs you played. The queue button in the player bar (or the
+now-playing screen) shows the manual queue and the autoplay tail, where tracks
+can be removed, reordered or played immediately.
+
+**Discover similar** opens manually from the now-playing view, or automatically
+after a song ends when autoplay is off and **After song ends** is checked. Its
+playback, queue and preview controls save their settings locally in this browser.
 Recommendations use your current source and library even without an API key.
 For wider Last.fm suggestions, add this line to `web/.env.local` and restart Vite:
 

@@ -9,6 +9,8 @@ import {
   Shuffle,
   Repeat2,
   AudioLines,
+  Sparkles,
+  ListMusic,
 } from 'lucide-react';
 import { Track } from '../data/musicData';
 import { ArtworkCrossfade } from './pixel/ArtworkCrossfade';
@@ -36,6 +38,10 @@ interface PlayerBarProps {
   onOpenLyrics: () => void;
   repeat: boolean;
   onToggleRepeat: () => void;
+  autoplay: boolean;
+  onToggleAutoplay: () => void;
+  onOpenQueue: () => void;
+  queueCount: number;
 }
 
 export const PlayerBar: React.FC<PlayerBarProps> = ({
@@ -57,6 +63,10 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   onOpenLyrics,
   repeat,
   onToggleRepeat,
+  autoplay,
+  onToggleAutoplay,
+  onOpenQueue,
+  queueCount,
 }) => {
   const barRef = useRef<HTMLElement | null>(null);
   const sheen = useGlassSheen<HTMLElement>();
@@ -302,6 +312,16 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
         />
         <button type="button" className="px-icon-btn" onClick={onOpenLyrics}
           aria-label="Open lyrics" title="Lyrics"><AudioLines size={17} strokeWidth={1.7} /></button>
+        <button type="button" className={`px-icon-btn ${autoplay ? 'is-active' : ''}`}
+          onClick={onToggleAutoplay} aria-label="Autoplay" aria-pressed={autoplay}
+          title={autoplay ? 'Autoplay on' : 'Autoplay off'}>
+          <Sparkles size={16} strokeWidth={1.7} />
+        </button>
+        <button type="button" className="px-icon-btn queue-button" onClick={onOpenQueue}
+          aria-label="Open queue" title="Queue">
+          <ListMusic size={16} strokeWidth={1.7} />
+          {queueCount > 0 && <span className="queue-count" aria-hidden="true">{queueCount > 99 ? '99+' : queueCount}</span>}
+        </button>
         <button
           id="player-expand-btn"
           onClick={onOpenNowPlaying}

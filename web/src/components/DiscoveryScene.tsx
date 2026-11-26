@@ -12,6 +12,8 @@ export interface DiscoverySceneProps {
   cards: Track[];
   queuedId?: string;
   queuedTracks: Track[];
+  autoplayTracks: Track[];
+  autoplay: boolean;
   loading: boolean;
   isPlaying: boolean;
   currentTime: number;
@@ -63,7 +65,7 @@ async function blurredArtwork(src: string): Promise<string> {
 }
 
 export function DiscoveryScene({
-  track, cards, queuedId, queuedTracks, loading, isPlaying, currentTime, volume,
+  track, cards, queuedId, queuedTracks, autoplayTracks, autoplay, loading, isPlaying, currentTime, volume,
   autoPlay, startCountdown, preview, onAutoPlayChange, onPreviewChange, onClose, onPlay,
   onTogglePlay, onPrevious, onNext, onLyrics, onQueue, onFavorite,
   onVolume,
@@ -438,9 +440,17 @@ export function DiscoveryScene({
         <button type="button" className="discovery-extra" aria-label="Open lyrics" onClick={() => exit(onLyrics)}><Mic2 size={18} /></button>
         <div className="discovery-queue-wrap">
           <button type="button" className="discovery-extra" aria-label="Show queue" aria-expanded={queueOpen} onClick={() => { cancelCountdown(); setQueueOpen(!queueOpen); }}><ListMusic size={18} /></button>
-          {queueOpen && <div className="discovery-queue-list"><strong>Up next</strong>{queuedTracks.length
-            ? queuedTracks.map((item) => <button type="button" key={trackIdentity(item)} onClick={() => exit(() => onPlay(item))}>{item.title} <small>{item.artist}</small></button>)
-            : <p>Your queue is empty. Add a song from the cards.</p>}</div>}
+          {queueOpen && <div className="discovery-queue-list">
+            <strong>Up next</strong>{queuedTracks.length
+              ? queuedTracks.map((item) => <button type="button" key={trackIdentity(item)} onClick={() => exit(() => onPlay(item))}>{item.title} <small>{item.artist}</small></button>)
+              : <p>Your queue is empty. Add a song from the cards.</p>}
+            {autoplay && <>
+              <strong>Autoplay</strong>
+              {autoplayTracks.length
+                ? autoplayTracks.map((item) => <button type="button" key={trackIdentity(item)} onClick={() => exit(() => onPlay(item))}>{item.title} <small>{item.artist}</small></button>)
+                : <p>Autoplay songs appear while this track plays.</p>}
+            </>}
+          </div>}
         </div>
         <button type="button" className="discovery-extra" aria-label={volume === 0 ? 'Unmute' : 'Mute'} onClick={() => onVolume(volume === 0 ? 0.7 : 0)}>{volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>
         <input className="discovery-volume" type="range" min="0" max="1" step="0.01" aria-label="Volume" value={volume} onChange={(e) => onVolume(Number(e.target.value))} />

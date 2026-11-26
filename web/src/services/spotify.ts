@@ -439,6 +439,13 @@ export const spotify = {
     return { tracks: result.tracks.items.filter(Boolean).map(mapSpotifyTrack), hasMore: !!result.tracks.next };
   },
   play,
+  async addToQueue(track: Track) {
+    const uri = await resolveTrackUri(track);
+    const device = playerQuery();
+    const suffix = device ? `&${device.slice(1)}` : '';
+    await request(`/me/player/queue?uri=${encodeURIComponent(uri)}${suffix}`, { method: 'POST' });
+    return uri;
+  },
   async pause() {
     if (snapshot.output === 'browser' && sdkPlayer) await sdkPlayer.pause();
     else await request(`/me/player/pause${playerQuery()}`, { method: 'PUT' });

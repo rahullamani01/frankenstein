@@ -17,9 +17,10 @@ import { localAudio } from './utils/localAudio';
 import { spotify } from './services/spotify';
 import { captureArtwork, startArtworkFlight, type ArtworkSource } from './utils/artworkFlight';
 import { useReducedMotion } from './hooks/useReducedMotion';
-import { getRecommendations, readRecommendations, recommendationKey, trackIdentity } from './recommendations/similar';
+import { getRecommendations, readRecommendations, recommendationKey, trackIdentity, getAutoplayTracks, mergeAutoplayQueue } from './recommendations/similar';
 import { Search as SearchIcon, Bell, Sun, Moon, X } from 'lucide-react';
 import { DevFpsMeter } from './components/DevFpsMeter';
+import { QueuePanel } from './components/QueuePanel';
 import { flushSync } from 'react-dom';
 
 function savedCatalogueTracks(): Track[] {
@@ -119,6 +120,10 @@ export default function App() {
   const [playbackBusy, setPlaybackBusy] = useState(false);
   const [queue, setQueue] = useState<Track[]>([]);
   const [upNext, setUpNext] = useState<Track[]>([]);
+  const [autoplay, setAutoplay] = useState(() => savedSetting('frankenstein:autoplay', true));
+  const [autoplayQueue, setAutoplayQueue] = useState<Track[]>([]);
+  const [autoplayLoading, setAutoplayLoading] = useState(false);
+  const [queueOpen, setQueueOpen] = useState(false);
   const [discoveryTrack, setDiscoveryTrack] = useState<Track | null>(null);
   const [discoveryFromEnd, setDiscoveryFromEnd] = useState(false);
   const [lyricsRequested, setLyricsRequested] = useState(0);
@@ -150,7 +155,35 @@ export default function App() {
   const lastPlaybackStart = useRef(0);
   const nextTrackRef = useRef<() => void>(() => {});
   const endTrackRef = useRef<() => void>(() => {});
+  const advanceFromEndRef = useRef<() => void>(() => {});
+  const autoplayFetching = useRef(false);
+  const autoplayRequest = useRef(0);
+  const autoplayEmptyUntil = useRef(0);
+  const advancingRef = useRef(false);
+  const spotifyQueuedRef = useRef<{ identity: string; track: Track } | null>(null);
+  const autoplayRef = useRef(autoplay);
+  autoplayRef.current = autoplay;
+  const autoplayQueueRef = useRef(autoplayQueue);
+  autoplayQueueRef.current = autoplayQueue;
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
+  const upNextRef = useRef(upNext);
+  upNextRef.current = upNext;
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const showRecommendationsRef = useRef(showRecommendations);
+  showRecommendationsRef.current = showRecommendations;
   const tracks = useMemo(() => [...localTracks, ...streamingTracks], [localTracks, streamingTracks]);
+  const tracksRef = useRef(tracks);
+  tracksRef.current = tracks;
+  const playbackContextIndex = currentTrack
+    ? queue.findIndex((item) => trackIdentity(item) === trackIdentity(currentTrack))
+    : -1;
+  const contextUpcoming = playbackContextIndex >= 0 ? queue.slice(playbackContextIndex + 1) : [];
+  const contextRemaining = contextUpcoming.length;
+  useEffect(() => {
+    try { localStorage.setItem('frankenstein:autoplay', String(autoplay)); } catch { /* optional */ }
+  }, [autoplay]);
   useEffect(() => {
     try { localStorage.setItem('frankenstein:show-recommendations', String(showRecommendations)); } catch { /* optional */ }
   }, [showRecommendations]);
@@ -214,7 +247,16 @@ export default function App() {
     discoveryRef.current = true;
     setDiscoveryFromEnd(fromEnd);
     setDiscoveryTrack(track);
-    loadDiscovery(track);
+    const shared = autoplayQueueRef.current.filter((item) =>
+      item.id && trackIdentity(item) !== trackIdentity(track)
+    );
+    if (shared.length) {
+      sceneRequest.current += 1;
+      setRecommendations(shared);
+      setRecommendationsLoading(false);
+    } else {
+      loadDiscovery(track);
+    }
   }, [loadDiscovery]);
 
   const closeDiscovery = useCallback(() => {
@@ -238,13 +280,12 @@ export default function App() {
     const track = currentTrackRef.current;
     if (!track || !track.id || endedRef.current === trackIdentity(track) || Date.now() - seekingRef.current < 1600) return;
     endedRef.current = trackIdentity(track);
-    setIsPlaying(false);
+    setCurrentTime(track.durationSec || currentTimeRef.current);
     if (repeat) {
-      void handlePlayTrack(track);
+      void handlePlayTrack(track, { keepAutoplay: true });
       return;
     }
-    if (showRecommendations) openDiscovery(track, true);
-    else nextTrackRef.current();
+    advanceFromEndRef.current();
   };
   endTrackRef.current = onTrackEnded;
 
@@ -259,8 +300,9 @@ export default function App() {
       case 'source-local': return tracks.filter((track) => track.source === 'Local');
       case 'source-apple': return tracks.filter((track) => track.source === 'Apple Music');
       case 'source-spotify': return tracks.filter((track) => track.source === 'Spotify');
-      // Search has no list of its own; keep the active playback queue
-      // instead of widening it to the whole library.
+      // Home and search are single-song launches. Autoplay builds the tail
+      // instead of silently widening them to the whole library.
+      case 'home':
       case 'search': return [];
       default: return tracks;
     }
@@ -280,6 +322,41 @@ export default function App() {
     setPlaybackError(error instanceof Error ? error.message : 'Could not play this song. Please try again.');
   };
 
+  // Spotify can advance into a track we queued for gapless playback. Adopt
+  // that state instead of asking the API to play the same song a second time.
+  const adoptSpotifyTrack = (track: Track, position: number) => {
+    const existing = tracksRef.current.find((item) => item.id === track.id);
+    const adopted = existing?.isFavorite === undefined ? track : { ...track, isFavorite: existing.isFavorite };
+    const wasAutoplay = autoplayQueueRef.current.some((item) => trackIdentity(item) === trackIdentity(adopted));
+    const contextContains = queueRef.current.some((item) => trackIdentity(item) === trackIdentity(adopted));
+    const nextQueue = contextContains && !wasAutoplay ? queueRef.current : [adopted];
+    currentTrackRef.current = adopted;
+    isPlayingRef.current = true;
+    queueRef.current = nextQueue;
+    spotifyQueuedRef.current = null;
+    lastPlaybackStart.current = Date.now();
+    endedRef.current = '';
+    setQueue(nextQueue);
+    setCurrentTrack(adopted);
+    setCurrentTime(Math.max(0, position));
+    setIsPlaying(true);
+    setPlaybackError(null);
+    setUpNext((previous) => previous.filter((item) => trackIdentity(item) !== trackIdentity(adopted)));
+    setAutoplayQueue((previous) => {
+      const next = previous.filter((item) => trackIdentity(item) !== trackIdentity(adopted));
+      autoplayQueueRef.current = next;
+      return next;
+    });
+    setHistory((previous) => [adopted, ...previous.filter((item) => trackIdentity(item) !== trackIdentity(adopted))].slice(0, 30));
+    if (adopted.source !== 'Local') {
+      setStreamingTracks((previous) => {
+        const saved = previous.find((item) => item.id === adopted.id);
+        return [{ ...adopted, isFavorite: saved?.isFavorite ?? adopted.isFavorite ?? false },
+          ...previous.filter((item) => item.id !== adopted.id)].slice(0, 200);
+      });
+    }
+  };
+
   // Mirror the real Spotify state; never simulate playback with a timer.
   useEffect(() => {
     if (currentTrack?.source !== 'Spotify' || !spotifyState.connected) return;
@@ -290,23 +367,31 @@ export default function App() {
         const state = await spotify.playback();
         if (!cancelled && state) {
           const previous = currentTrackRef.current;
+          const queued = spotifyQueuedRef.current;
+          const queuedMatch = Boolean(queued && queued.track.id === state.track.id);
+          const trackChanged = previous?.source === 'Spotify' && state.track.id !== previous.id;
           const finished = previous?.source === 'Spotify'
             && state.track.id === previous.id
             && isPlayingRef.current
             && !state.isPlaying
             && state.position >= Math.max(0, previous.durationSec - 1.5);
           const advancedAfterEnd = previous?.source === 'Spotify'
-            && state.track.id !== previous.id
-            && isPlayingRef.current
-            && Date.now() - lastPlaybackStart.current > 2500
-            && Date.now() - seekingRef.current > 1600
-            && previous.durationSec > 0
-            && currentTimeRef.current >= previous.durationSec - 2.5;
-          if (finished || advancedAfterEnd) {
+            && trackChanged
+            && (queuedMatch || (
+              isPlayingRef.current
+              && Date.now() - lastPlaybackStart.current > 2500
+              && Date.now() - seekingRef.current > 1600
+              && previous.durationSec > 0
+              && currentTimeRef.current >= previous.durationSec - 2.5
+            ));
+          let adopted = false;
+          if (advancedAfterEnd && queuedMatch) {
+            adoptSpotifyTrack(state.track, state.position);
+            adopted = true;
+          } else if (finished || advancedAfterEnd) {
             endTrackRef.current();
-            if (advancedAfterEnd) void spotify.pause().catch(() => {});
           }
-          if (!discoveryRef.current && !finished && !advancedAfterEnd) {
+          if (!discoveryRef.current && !finished && !advancedAfterEnd && !adopted) {
             // Spotify's state can lag a just-issued play command.
             if (Date.now() - lastPlaybackStart.current > 1500) {
               setCurrentTrack((previous) => previous?.id === state.track.id
@@ -340,19 +425,34 @@ export default function App() {
   useEffect(() => {
     if (currentTrack?.source !== 'Apple Music' || !isPlaying) return;
     let cancelled = false;
+    const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
     const interval = window.setInterval(() => {
       void api.appleStatus().then((status) => {
         if (cancelled || discoveryRef.current) return;
-        if (!status.nowPlaying) {
-          const current = currentTrackRef.current;
-          if (current?.source === 'Apple Music' && current.durationSec > 0
-            && currentTimeRef.current >= current.durationSec - 2.5) endTrackRef.current();
+        const current = currentTrackRef.current;
+        if (current?.source !== 'Apple Music') return;
+        if (!status.nowPlaying || !status.nowPlaying.name) {
+          // Music.app clears the track once it stops. The last poll may be a
+          // few seconds behind, so allow for one polling cycle of slack.
+          if (current.durationSec > 0 && currentTimeRef.current >= current.durationSec - 5.5) {
+            endTrackRef.current();
+          }
           return;
         }
         const playing = status.nowPlaying.state.toLowerCase() === 'playing';
         const position = status.nowPlaying.position_seconds;
-        const current = currentTrackRef.current;
-        if (current?.source !== 'Apple Music') return;
+        const sameTitle = normalize(status.nowPlaying.name) === normalize(current.title);
+        const appleArtist = normalize(status.nowPlaying.artist);
+        const appArtist = normalize(current.artist);
+        const sameTrack = sameTitle && (appleArtist.includes(appArtist) || appArtist.includes(appleArtist));
+        if (!sameTrack) {
+          // Music.app can roll into its own next track. Stop it and let the
+          // app's context queue / autoplay choose the next song instead.
+          if (Date.now() - lastPlaybackStart.current < 2000 || Date.now() - seekingRef.current < 1600) return;
+          void api.applePlayPause().catch(() => {});
+          endTrackRef.current();
+          return;
+        }
         if (!playing && Number.isFinite(position) && position >= Math.max(0, current.durationSec - 1.5)) {
           endTrackRef.current();
         } else if (Number.isFinite(position)) {
@@ -479,18 +579,41 @@ export default function App() {
     return () => flight?.cancel();
   }, [currentScreen, selectedAlbumId]);
 
-  const handlePlayTrack = async (track: Track) => {
+  type PlayOptions = {
+    context?: Track[];
+    keepAutoplay?: boolean;
+    silent?: boolean;
+  };
+
+  const resetAutoplayQueue = () => {
+    autoplayRequest.current += 1;
+    autoplayFetching.current = false;
+    autoplayEmptyUntil.current = 0;
+    autoplayQueueRef.current = [];
+    setAutoplayQueue([]);
+    setAutoplayLoading(false);
+  };
+
+  const handlePlayTrack = async (track: Track, options: PlayOptions = {}): Promise<boolean> => {
     seekingRef.current = Date.now();
     const request = ++playRequest.current;
     setPlaybackBusy(true);
     setPlaybackError(null);
 
     const scoped = queueForScreen();
-    const context = scoped.some((item) => item.id === track.id)
-      ? scoped
-      : queue.some((item) => item.id === track.id)
-        ? queue
-        : tracks;
+    const scopedIndex = scoped.findIndex((item) => item.id === track.id);
+    const queueIndex = queueRef.current.findIndex((item) => item.id === track.id);
+    // A search result or a home pick is a single-song launch. Only list
+    // screens and an explicit/manual queue get to drive the next track.
+    const singleLaunch = currentScreen === 'home' || currentScreen === 'search';
+    const context = options.context
+      ?? (singleLaunch
+        ? [track]
+        : scopedIndex >= 0 && scoped.length > 1
+          ? scoped
+          : queueIndex >= 0 && queueRef.current.length > 1
+            ? queueRef.current
+            : [track]);
 
     try {
       // Start the new source first. The old one is only stopped once the new
@@ -508,25 +631,37 @@ export default function App() {
           if (spotifyState.connected) await spotify.pause().catch(() => {});
         }
       }
-      if (request !== playRequest.current) return;
+      if (request !== playRequest.current) return false;
       lastPlaybackStart.current = Date.now();
       endedRef.current = '';
+      spotifyQueuedRef.current = null;
+      localAudio.clearPreload();
+      queueRef.current = context;
       setQueue(context);
       setUpNext((previous) => previous.filter((item) => trackIdentity(item) !== trackIdentity(track)));
       setCurrentTrack(track);
       setCurrentTime(0);
       setIsPlaying(true);
-      setHistory((prev) => [track, ...prev.filter((t) => t.id !== track.id)].slice(0, 30));
+      setHistory((prev) => [track, ...prev.filter((t) => trackIdentity(t) !== trackIdentity(track))].slice(0, 30));
       if (track.source !== 'Local') {
         setStreamingTracks((previous) => {
           const existing = previous.find((t) => t.id === track.id);
           return [{ ...track, isFavorite: existing?.isFavorite ?? false }, ...previous.filter((t) => t.id !== track.id)].slice(0, 200);
         });
       }
+      if (options.keepAutoplay) {
+        const remaining = autoplayQueueRef.current.filter((item) => trackIdentity(item) !== trackIdentity(track));
+        autoplayQueueRef.current = remaining;
+        setAutoplayQueue(remaining);
+      } else {
+        resetAutoplayQueue();
+      }
+      return true;
     } catch (error) {
       // The previous song was left running on purpose, so keep its playing
       // state instead of showing a false pause when the new one fails.
-      if (request === playRequest.current) reportPlaybackError(error);
+      if (request === playRequest.current && !options.silent) reportPlaybackError(error);
+      return false;
     } finally {
       if (request === playRequest.current) setPlaybackBusy(false);
     }
@@ -547,11 +682,20 @@ export default function App() {
     } catch (error) { reportPlaybackError(error); }
   };
 
+  const nextContextTrack = (track: Track | null, wrap = false): Track | null => {
+    if (!track) return null;
+    const list = queueRef.current;
+    const index = list.findIndex((item) => trackIdentity(item) === trackIdentity(track));
+    if (index < 0) return null;
+    if (index < list.length - 1) return list[index + 1];
+    return wrap && list.length > 1 ? list[0] : null;
+  };
+
   const playbackQueue = (): Track[] => {
     const scoped = queueForScreen();
     if (scoped.length > 0 && scoped.some((track) => track.id === currentTrack?.id)) return scoped;
     if (currentScreen === 'favorites' && scoped.length > 0) return scoped;
-    return queue.length > 0 ? queue : tracks;
+    return queueRef.current.length > 0 ? queueRef.current : tracks;
   };
 
   const randomIndex = (length: number, avoid: number) => {
@@ -561,48 +705,208 @@ export default function App() {
     return index;
   };
 
+  /**
+   * Fetches the next 12 songs from the last five played tracks. Refills are
+   * started while the current song is still playing, so the end handler can
+   * hand off without waiting on the network.
+   */
+  const refillAutoplay = async (failed: Track[] = []): Promise<Track[]> => {
+    const track = currentTrackRef.current;
+    if (!track?.id || !autoplayRef.current) return autoplayQueueRef.current;
+    if (autoplayFetching.current) return autoplayQueueRef.current;
+    if (Date.now() < autoplayEmptyUntil.current) return autoplayQueueRef.current;
+    const request = autoplayRequest.current;
+    autoplayFetching.current = true;
+    setAutoplayLoading(true);
+    try {
+      const seeds = [track, ...historyRef.current].filter((item, index, list) =>
+        item?.id
+        && item.source === track.source
+        && list.findIndex((other) => trackIdentity(other) === trackIdentity(item)) === index
+      ).slice(0, 5);
+      const existing = autoplayQueueRef.current;
+      const contextIndex = queueRef.current.findIndex((item) => trackIdentity(item) === trackIdentity(track));
+      const contextTail = contextIndex >= 0 ? queueRef.current.slice(contextIndex + 1) : [];
+      const fetched = await getAutoplayTracks({
+        seeds,
+        source: track.source,
+        library: tracksRef.current,
+        history: historyRef.current,
+        exclude: [...existing, ...upNextRef.current, ...contextTail, ...failed],
+        limit: 12,
+      });
+      if (request !== autoplayRequest.current) return autoplayQueueRef.current;
+      const merged = mergeAutoplayQueue(existing, fetched, historyRef.current, upNextRef.current, 24);
+      autoplayQueueRef.current = merged;
+      setAutoplayQueue(merged);
+      if (merged.length === 0 || merged.length === existing.length) {
+        // Nothing new can be found right now; back off instead of hammering
+        // the recommendation source on every loading-state change.
+        autoplayEmptyUntil.current = Date.now() + 60_000;
+      }
+      return merged;
+    } catch {
+      return autoplayQueueRef.current;
+    } finally {
+      if (request === autoplayRequest.current) {
+        autoplayFetching.current = false;
+        setAutoplayLoading(false);
+      }
+    }
+  };
+
+  const playAutoplayNext = async (current: Track | null, failed: Track[] = []): Promise<boolean> => {
+    const failedIds = new Set(failed.map(trackIdentity));
+    let candidates = autoplayQueueRef.current.filter((item) =>
+      item.id && !failedIds.has(trackIdentity(item))
+      && (!current || trackIdentity(item) !== trackIdentity(current))
+    );
+    if (candidates.length === 0) {
+      const refreshed = await refillAutoplay(failed);
+      candidates = refreshed.filter((item) =>
+        item.id && !failedIds.has(trackIdentity(item))
+        && (!current || trackIdentity(item) !== trackIdentity(current))
+      );
+    }
+    for (const candidate of candidates) {
+      const id = trackIdentity(candidate);
+      failedIds.add(id);
+      const started = await handlePlayTrack(candidate, {
+        context: [candidate],
+        keepAutoplay: true,
+        silent: true,
+      });
+      if (started) return true;
+      failed.push(candidate);
+      const remaining = autoplayQueueRef.current.filter((item) => trackIdentity(item) !== id);
+      autoplayQueueRef.current = remaining;
+      setAutoplayQueue(remaining);
+    }
+    return false;
+  };
+
+  /**
+   * Natural end-of-track sequence: manual queue, then the launch context,
+   * then autoplay. Context never wraps here; reaching the last album or
+   * playlist track hands over to autoplay instead of restarting the album.
+   */
+  const advanceFromEnd = () => {
+    const track = currentTrackRef.current;
+    if (!track?.id || advancingRef.current) return;
+    advancingRef.current = true;
+    void (async () => {
+      try {
+        const manual = upNextRef.current[0];
+        if (manual && trackIdentity(manual) !== trackIdentity(track)) {
+          const started = await handlePlayTrack(manual, { keepAutoplay: true });
+          if (started) return;
+          setUpNext((previous) => previous.filter((item) => trackIdentity(item) !== trackIdentity(manual)));
+        }
+        const next = nextContextTrack(track, false);
+        if (next && trackIdentity(next) !== trackIdentity(track)) {
+          const started = await handlePlayTrack(next, { keepAutoplay: true });
+          if (started) return;
+        }
+        if (autoplayRef.current) {
+          if (await playAutoplayNext(track)) return;
+          // One fresh batch after a run of unplayable matches, never a loop.
+          const refreshed = await refillAutoplay([]);
+          if (refreshed.length && await playAutoplayNext(track)) return;
+          setPlaybackError('Autoplay could not find a playable next song.');
+          setIsPlaying(false);
+          return;
+        }
+        if (showRecommendationsRef.current) {
+          setIsPlaying(false);
+          openDiscovery(track, true);
+          return;
+        }
+        setIsPlaying(false);
+        if (track.source === 'Local') localAudio.pause();
+        else if (track.source === 'Spotify') void spotify.pause().catch(() => {});
+        else void api.applePlayPause().catch(() => {});
+      } finally {
+        advancingRef.current = false;
+      }
+    })();
+  };
+  advanceFromEndRef.current = advanceFromEnd;
+
   const handleNextTrack = () => {
-    if (upNext.length) {
-      void handlePlayTrack(upNext[0]);
+    if (advancingRef.current) return;
+    if (upNextRef.current.length) {
+      void handlePlayTrack(upNextRef.current[0], { keepAutoplay: true });
       return;
     }
     const list = playbackQueue();
-    if (list.length === 0) return;
-    if (list.length === 1) {
-      if (currentTrack?.source === 'Spotify') void spotify.next().catch(reportPlaybackError);
-      else if (currentTrack?.source === 'Apple Music') void api.appleNext().catch(reportPlaybackError);
+    const index = list.findIndex((track) => trackIdentity(track) === (currentTrack ? trackIdentity(currentTrack) : ''));
+    const atEnd = index >= 0 && index === list.length - 1;
+    if (list.length > 1 && !(atEnd && autoplayRef.current)) {
+      const next = shuffle ? randomIndex(list.length, index) : (index + 1) % list.length;
+      if (trackIdentity(list[next]) !== (currentTrack ? trackIdentity(currentTrack) : '')) {
+        void handlePlayTrack(list[next], { keepAutoplay: true });
+        return;
+      }
+    }
+    if (autoplayRef.current && currentTrack) {
+      void playAutoplayNext(currentTrack);
       return;
     }
-    const idx = list.findIndex((track) => track.id === currentTrack?.id);
-    const next = shuffle ? randomIndex(list.length, idx) : (idx + 1) % list.length;
-    void handlePlayTrack(list[next]);
+    // Manual next still works when autoplay is off, even for a single-track
+    // launch: step through the library without enabling automatic tails.
+    if (currentTrack && tracks.length > 1) {
+      const libraryIndex = tracks.findIndex((track) => trackIdentity(track) === trackIdentity(currentTrack));
+      const next = tracks[(libraryIndex + 1 + tracks.length) % tracks.length];
+      if (trackIdentity(next) !== trackIdentity(currentTrack)) {
+        void handlePlayTrack(next, { keepAutoplay: true, context: [next] });
+      }
+    }
   };
   nextTrackRef.current = handleNextTrack;
 
   const handlePreviousTrack = () => {
-    const list = playbackQueue();
-    if (list.length === 0) return;
     if (currentTime > 3) {
       setCurrentTime(0);
+      endedRef.current = '';
       if (currentTrack?.source === 'Local') localAudio.seek(0);
       else if (currentTrack?.source === 'Spotify') void spotify.seek(0).catch(reportPlaybackError);
+      else if (currentTrack?.source === 'Apple Music') {
+        void api.applePlayTrack(currentTrack.title, currentTrack.artist).catch(reportPlaybackError);
+      }
       return;
     }
-    if (list.length === 1) {
-      if (currentTrack?.source === 'Spotify') void spotify.previous().catch(reportPlaybackError);
-      else if (currentTrack?.source === 'Apple Music') void api.applePrevious().catch(reportPlaybackError);
+    const list = playbackQueue();
+    const index = list.findIndex((track) => trackIdentity(track) === (currentTrack ? trackIdentity(currentTrack) : ''));
+    const contextPrevious = index > 0
+      ? list[index - 1]
+      : list.length > 2 && index === 0
+        ? list[list.length - 1]
+        : null;
+    const historyPrevious = historyRef.current.find((item, position) =>
+      position > 0 && (!currentTrack || trackIdentity(item) !== trackIdentity(currentTrack))
+    );
+    const previous = contextPrevious || historyPrevious || null;
+    if (previous && (!currentTrack || trackIdentity(previous) !== trackIdentity(currentTrack))) {
+      void handlePlayTrack(previous, { keepAutoplay: true });
       return;
     }
-    const idx = list.findIndex((track) => track.id === currentTrack?.id);
-    const previous = shuffle
-      ? randomIndex(list.length, idx)
-      : (idx - 1 + list.length) % list.length;
-    void handlePlayTrack(list[previous]);
+    if (currentTrack?.source === 'Spotify') void spotify.previous().catch(reportPlaybackError);
+    else if (currentTrack?.source === 'Apple Music') void api.applePrevious().catch(reportPlaybackError);
+    else if (currentTrack) {
+      setCurrentTime(0);
+      localAudio.seek(0);
+    }
   };
 
   const handleSeek = (newTime: number) => {
     seekingRef.current = Date.now();
-    if (newTime < Math.max(0, (currentTrack?.durationSec || 0) - 2)) endedRef.current = '';
+    const duration = currentTrack?.durationSec || 0;
+    if (currentTrack && duration > 0 && newTime >= duration - 2) {
+      // Seeking to the credits is an intentional stop, not a natural end.
+      endedRef.current = trackIdentity(currentTrack);
+    } else {
+      endedRef.current = '';
+    }
     setCurrentTime(newTime);
     if (currentTrack?.source === 'Local') localAudio.seek(newTime);
     else if (currentTrack?.source === 'Spotify') void spotify.seek(newTime).catch(reportPlaybackError);
@@ -614,6 +918,86 @@ export default function App() {
     const pct = Math.round(newVol * 100);
     if (currentTrack?.source === 'Spotify') void spotify.volume(newVol).catch(reportPlaybackError);
     if (currentTrack?.source === 'Apple Music') void api.appleVolume(pct);
+  };
+
+  // Turning autoplay off immediately discards the fetch-ahead tail. The
+  // current song keeps playing and the queue/context still finish normally.
+  useEffect(() => {
+    if (autoplay) return;
+    resetAutoplayQueue();
+  }, [autoplay]);
+
+  // Keep at least three songs ready whenever the current context is near its
+  // end. This starts while the first song is still playing.
+  useEffect(() => {
+    if (!autoplay || !isPlaying || !currentTrack?.id) return;
+    if (contextRemaining > 2 || autoplayQueue.length >= 3 || autoplayLoading) return;
+    void refillAutoplay();
+  }, [autoplay, isPlaying, currentTrack?.id, contextRemaining, autoplayQueue.length, autoplayLoading]);
+
+  // Hand Spotify its next URI about 20 seconds early for a seamless rollover,
+  // and prime the local file with a second audio element.
+  useEffect(() => {
+    if (!currentTrack?.id || !isPlaying || currentTrack.durationSec <= 0 || repeat) return;
+    const remaining = currentTrack.durationSec - currentTime;
+    if (remaining > 20 || remaining < 1.5) return;
+    const next = upNext[0] || nextContextTrack(currentTrack, false)
+      || (autoplay ? autoplayQueue[0] : null);
+    if (!next || next.source !== currentTrack.source) return;
+    if (currentTrack.source === 'Spotify') {
+      if (spotifyQueuedRef.current?.identity === trackIdentity(next)) return;
+      spotifyQueuedRef.current = { identity: trackIdentity(next), track: next };
+      void spotify.addToQueue(next).catch(() => {
+        if (spotifyQueuedRef.current?.identity === trackIdentity(next)) spotifyQueuedRef.current = null;
+      });
+    } else if (currentTrack.source === 'Local') {
+      localAudio.preloadNext(api.streamUrl(next.id));
+    }
+  }, [currentTrack?.id, currentTime, isPlaying, autoplay, upNext, autoplayQueue, queue, repeat]);
+
+  const handlePlayFromQueue = (track: Track, fromAutoplay: boolean) => {
+    setQueueOpen(false);
+    if (fromAutoplay) {
+      const remaining = autoplayQueueRef.current.filter((item) => trackIdentity(item) !== trackIdentity(track));
+      autoplayQueueRef.current = remaining;
+      setAutoplayQueue(remaining);
+      void handlePlayTrack(track, { context: [track], keepAutoplay: true });
+    } else {
+      void handlePlayTrack(track);
+    }
+  };
+
+  const handleRemoveUpNext = (track: Track) => {
+    setUpNext((previous) => previous.filter((item) => trackIdentity(item) !== trackIdentity(track)));
+  };
+
+  const handleRemoveAutoplay = (track: Track) => {
+    const remaining = autoplayQueueRef.current.filter((item) => trackIdentity(item) !== trackIdentity(track));
+    autoplayQueueRef.current = remaining;
+    setAutoplayQueue(remaining);
+  };
+
+  const handleMoveAutoplay = (track: Track, direction: -1 | 1) => {
+    const current = autoplayQueueRef.current;
+    const index = current.findIndex((item) => trackIdentity(item) === trackIdentity(track));
+    if (index < 0) return;
+    const target = index + direction;
+    if (target < 0 || target >= current.length) return;
+    const next = [...current];
+    [next[index], next[target]] = [next[target], next[index]];
+    autoplayQueueRef.current = next;
+    setAutoplayQueue(next);
+  };
+
+  const handleToggleAutoplay = () => {
+    const next = !autoplayRef.current;
+    autoplayRef.current = next;
+    setAutoplay(next);
+    if (next) {
+      // Prefetch on the next render's effect; this avoids waiting for a toggle
+      // to propagate before the first request starts.
+      window.setTimeout(() => { void refillAutoplay(); }, 0);
+    }
   };
 
   const handleToggleFavorite = async (trackId: string, searchTrack?: Track) => {
@@ -720,6 +1104,65 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Lock-screen, keyboard media keys and headset controls follow the same
+  // queue and autoplay hand-off as the in-app transport.
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
+    const artwork = currentTrack?.coverUrl
+      ? [{ src: currentTrack.coverUrl, sizes: '512x512' }]
+      : [];
+    try {
+      session.metadata = currentTrack?.id ? new MediaMetadata({
+        title: currentTrack.title,
+        artist: currentTrack.artist || 'Unknown artist',
+        album: currentTrack.album || '',
+        artwork,
+      }) : null;
+      session.playbackState = currentTrack?.id && isPlaying ? 'playing' : 'paused';
+    } catch { /* some browsers expose only part of the Media Session API */ }
+  }, [currentTrack?.id, currentTrack?.title, currentTrack?.artist, currentTrack?.album, currentTrack?.coverUrl, isPlaying]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
+    const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
+      ['play', () => { if (!isPlayingRef.current) shortcutRef.current.play(); }],
+      ['pause', () => { if (isPlayingRef.current) shortcutRef.current.play(); }],
+      ['nexttrack', () => shortcutRef.current.next()],
+      ['previoustrack', () => shortcutRef.current.previous()],
+      ['seekbackward', (details) => shortcutRef.current.seek(Math.max(0, currentTimeRef.current - (details.seekOffset || 10)))],
+      ['seekforward', (details) => shortcutRef.current.seek(currentTimeRef.current + (details.seekOffset || 10))],
+      ['seekto', (details) => {
+        if (typeof details.seekTime === 'number') shortcutRef.current.seek(details.seekTime);
+      }],
+      ['stop', () => {
+        if (isPlayingRef.current) shortcutRef.current.play();
+      }],
+    ];
+    for (const [action, handler] of handlers) {
+      try { session.setActionHandler(action, handler); } catch { /* unsupported action */ }
+    }
+    return () => {
+      for (const [action] of handlers) {
+        try { session.setActionHandler(action, null); } catch { /* unsupported action */ }
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !currentTrack?.id) return;
+    const duration = currentTrack.durationSec;
+    if (!duration || !Number.isFinite(duration)) return;
+    try {
+      navigator.mediaSession.setPositionState({
+        duration,
+        playbackRate: 1,
+        position: Math.max(0, Math.min(duration, currentTime)),
+      });
+    } catch { /* position state is best-effort */ }
+  }, [currentTrack?.id, currentTrack?.durationSec, currentTime]);
+
   const recentlyPlayedAlbums = albums.slice(0, 6);
   const recentlyAddedAlbums = albums.slice().reverse().slice(0, 6);
 
@@ -740,8 +1183,8 @@ export default function App() {
   const contextIndex = discoveryTrack
     ? queue.findIndex((item) => trackIdentity(item) === trackIdentity(discoveryTrack))
     : -1;
-  const nextInContext = contextIndex >= 0 && queue.length > 1
-    ? queue[(contextIndex + 1) % queue.length]
+  const nextInContext = contextIndex >= 0 && contextIndex < queue.length - 1
+    ? queue[contextIndex + 1]
     : null;
   const queuedFirst = upNext[0] || nextInContext;
   const discoveryCards = discoveryTrack
@@ -1027,6 +1470,10 @@ export default function App() {
           onToggleShuffle={() => setShuffle((value) => !value)}
           repeat={repeat}
           onToggleRepeat={() => setRepeat((value) => !value)}
+          autoplay={autoplay}
+          onToggleAutoplay={handleToggleAutoplay}
+          onOpenQueue={() => setQueueOpen(true)}
+          queueCount={upNext.length + contextUpcoming.length + autoplayQueue.length}
           onToggleFavorite={() =>
             displayTrack.id && handleToggleFavorite(displayTrack.id)
           }
@@ -1063,6 +1510,10 @@ export default function App() {
         onDiscoverSimilar={handleDiscoverSimilar}
         showRecommendations={showRecommendations}
         onShowRecommendationsChange={setShowRecommendations}
+        autoplay={autoplay}
+        onToggleAutoplay={handleToggleAutoplay}
+        onOpenQueue={() => setQueueOpen(true)}
+        queueCount={upNext.length + contextUpcoming.length + autoplayQueue.length}
         lyricsRequested={lyricsRequested}
       />
       </div>
@@ -1072,6 +1523,8 @@ export default function App() {
           cards={discoveryCards}
           queuedId={queuedFirst ? trackIdentity(queuedFirst) : undefined}
           queuedTracks={upNext.length ? upNext : nextInContext ? [nextInContext] : []}
+          autoplayTracks={autoplayQueue}
+          autoplay={autoplay}
           loading={recommendationsLoading}
           isPlaying={isPlaying}
           currentTime={currentTime}
@@ -1111,6 +1564,21 @@ export default function App() {
           onVolume={handleVolumeChange}
         />
       )}
+      <QueuePanel
+        open={queueOpen}
+        currentTrack={currentTrack}
+        upNext={upNext}
+        context={contextUpcoming}
+        autoplayTracks={autoplayQueue}
+        autoplay={autoplay}
+        loading={autoplayLoading}
+        onClose={() => setQueueOpen(false)}
+        onPlay={handlePlayFromQueue}
+        onRemoveUpNext={handleRemoveUpNext}
+        onRemoveAutoplay={handleRemoveAutoplay}
+        onMoveAutoplay={handleMoveAutoplay}
+        onToggleAutoplay={handleToggleAutoplay}
+      />
       <DevFpsMeter />
     </div>
   );

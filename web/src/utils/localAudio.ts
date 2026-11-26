@@ -6,17 +6,67 @@
 class LocalAudioPlayer {
   private audio: HTMLAudioElement | null = null;
   private volume = 0.75;
+  private preloaded: HTMLAudioElement | null = null;
+  private preloadedUrl = '';
+  private endedHandler: (() => void) | null = null;
+  private timeHandler: ((t: number) => void) | null = null;
+
+  private attach(audio: HTMLAudioElement) {
+    audio.onended = () => this.endedHandler?.();
+    audio.ontimeupdate = () => this.timeHandler?.(audio.currentTime);
+  }
 
   private ensure(): HTMLAudioElement {
     if (!this.audio) {
       this.audio = new Audio();
       this.audio.preload = "auto";
       this.audio.volume = this.volume;
+      this.attach(this.audio);
     }
     return this.audio;
   }
 
+  /** Prime the next file while the current one is still playing. */
+  preloadNext(url: string) {
+    if (!url || url === this.preloadedUrl) return;
+    this.preloadedUrl = url;
+    try {
+      const audio = new Audio();
+      audio.preload = 'auto';
+      audio.volume = 0;
+      audio.src = url;
+      audio.load();
+      this.preloaded = audio;
+    } catch {
+      this.preloaded = null;
+    }
+  }
+
+  clearPreload() {
+    this.preloaded = null;
+    this.preloadedUrl = '';
+  }
+
   async playUrl(url: string) {
+    // Adopt the element that has already buffered the next song when we can.
+    const prepared = this.preloaded && this.preloadedUrl === url ? this.preloaded : null;
+    if (prepared) {
+      const previousAudio = this.audio;
+      previousAudio?.pause();
+      this.audio = prepared;
+      this.attach(prepared);
+      prepared.volume = this.volume;
+      prepared.currentTime = 0;
+      this.preloaded = null;
+      this.preloadedUrl = '';
+      try {
+        await prepared.play();
+        return;
+      } catch {
+        this.audio = previousAudio;
+        if (previousAudio) this.attach(previousAudio);
+      }
+    }
     const a = this.ensure();
     // Keep the current song recoverable if the new file cannot be loaded.
     const previous = { src: a.src, time: a.currentTime, wasPlaying: !a.paused };
@@ -82,13 +132,13 @@ class LocalAudioPlayer {
   }
 
   onEnded(cb: () => void) {
-    const a = this.ensure();
-    a.onended = cb;
+    this.endedHandler = cb;
+    this.attach(this.ensure());
   }
 
   onTimeUpdate(cb: (t: number) => void) {
-    const a = this.ensure();
-    a.ontimeupdate = () => cb(a.currentTime);
+    this.timeHandler = cb;
+    this.attach(this.ensure());
   }
 }
 
