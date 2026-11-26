@@ -1,147 +1,69 @@
 import React from 'react';
 import {
-  Images,
-  Search,
-  FolderOpen,
-  Heart,
-  Clock,
-  ListMusic,
-  HardDrive,
-  Music2,
-  Radio,
-  Moon,
-  Sun,
+  Home, Search, Library, Heart, History, ListMusic, HardDrive,
+  Music2, Radio, Settings2,
 } from 'lucide-react';
 
 export type ScreenId =
-  | 'home'
-  | 'search'
-  | 'library'
-  | 'favorites'
-  | 'history'
-  | 'playlists'
-  | 'album'
-  | 'now-playing'
-  | 'source-local'
-  | 'source-apple'
-  | 'source-spotify';
+  | 'home' | 'search' | 'library' | 'favorites' | 'history'
+  | 'playlists' | 'album' | 'now-playing'
+  | 'source-local' | 'source-apple' | 'source-spotify';
 
 interface SidebarProps {
   currentScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
-  selectedSource?: string | null;
-  darkMode: boolean;
-  onToggleTheme: () => void;
+  onDiscover: () => void;
+  onSettings: () => void;
+  thumbnail?: string;
 }
 
+const primary = [
+  { id: 'home', label: 'Home', icon: Home },
+  { id: 'search', label: 'Search', icon: Search },
+  { id: 'library', label: 'Library', icon: Library },
+  { id: 'favorites', label: 'Favorites', icon: Heart },
+  { id: 'history', label: 'History', icon: History },
+  { id: 'playlists', label: 'Playlists', icon: ListMusic },
+] as const;
+const sources = [
+  { id: 'source-local', label: 'Local', icon: HardDrive },
+  { id: 'source-apple', label: 'Apple Music', icon: Music2 },
+  { id: 'source-spotify', label: 'Spotify', icon: Radio },
+] as const;
+
 export const Sidebar: React.FC<SidebarProps> = ({
-  currentScreen,
-  onNavigate,
-  darkMode,
-  onToggleTheme,
-}) => {
-  const mainNavItems = [
-    { id: 'home' as ScreenId, label: 'Gallery', icon: Images },
-    { id: 'search' as ScreenId, label: 'Search', icon: Search },
-    { id: 'library' as ScreenId, label: 'Library', icon: FolderOpen },
-    { id: 'favorites' as ScreenId, label: 'Favorites', icon: Heart },
-    { id: 'history' as ScreenId, label: 'History', icon: Clock },
-    { id: 'playlists' as ScreenId, label: 'Playlists', icon: ListMusic },
-  ];
-
-  const sourceItems = [
-    { id: 'source-local' as ScreenId, label: 'Local', tone: 'local', icon: HardDrive },
-    { id: 'source-apple' as ScreenId, label: 'Apple Music', tone: 'apple', icon: Music2 },
-    { id: 'source-spotify' as ScreenId, label: 'Spotify', tone: 'spotify', icon: Radio },
-  ];
-
-  return (
-    <aside id="app-sidebar" className="pixel-sidebar" aria-label="Main navigation">
-      <div className="pixel-sidebar-scroll">
-        <div className="pixel-window-bar">
-          <div className="pixel-dots" aria-hidden="true">
-            <span className="pixel-dot is-red" />
-            <span className="pixel-dot is-yellow" />
-            <span className="pixel-dot is-green" />
-          </div>
-          <span>offline gallery</span>
-        </div>
-
-        <div className="pixel-brand">
-          <div className="px-mark" aria-hidden="true" />
-          <div className="pixel-brand-copy">
-            <strong>Frankenstein</strong>
-            <span>pixel listening gallery</span>
-          </div>
-        </div>
-
-        <nav className="pixel-nav" aria-label="Galleries">
-          {mainNavItems.map((item) => {
-            const Icon = item.icon;
-            const isSelected = currentScreen === item.id;
-            return (
-              <button
-                key={item.id}
-                id={`nav-${item.id}`}
-                onClick={() => onNavigate(item.id)}
-                className={`pixel-nav-btn ${isSelected ? 'is-active' : ''}`}
-                title={item.label}
-                aria-label={item.label}
-                aria-current={isSelected ? 'page' : undefined}
-              >
-                <Icon
-                  size={15}
-                  strokeWidth={1.7}
-                  className="px-nav-icon"
-                />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="pixel-nav-sep" aria-hidden="true" />
-        <div className="pixel-nav-label">Sources</div>
-
-        <div className="pixel-nav" aria-label="Sources">
-          {sourceItems.map((source) => {
-            const isSelected = currentScreen === source.id;
-            const Icon = source.icon;
-            return (
-              <button
-                key={source.id}
-                id={`nav-${source.id}`}
-                onClick={() => onNavigate(source.id)}
-                className={`pixel-nav-btn ${isSelected ? 'is-active' : ''}`}
-                title={source.label}
-                aria-label={source.label}
-                aria-current={isSelected ? 'page' : undefined}
-              >
-                <Icon
-                  size={15}
-                  strokeWidth={1.7}
-                  className={`px-nav-icon px-source-icon is-${source.tone}`}
-                  aria-hidden="true"
-                />
-                <span>{source.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="pixel-sidebar-foot">
-        <span>made for listening</span>
-        <button
-          onClick={onToggleTheme}
-          className="px-switch"
-          aria-label={darkMode ? 'Switch to day gallery' : 'Switch to night gallery'}
-          title={darkMode ? 'Day gallery' : 'Night gallery'}
-        >
-          {darkMode ? <Sun size={12} strokeWidth={1.8} /> : <Moon size={12} strokeWidth={1.8} />}
-          <span>{darkMode ? 'Day' : 'Night'}</span>
+  currentScreen, onNavigate, onDiscover, onSettings, thumbnail,
+}) => (
+  <aside id="app-sidebar" className="glass-sidebar" aria-label="Main navigation">
+    <div className="glass-window-dots" aria-hidden="true"><i /><i /><i /></div>
+    <nav className="glass-nav" aria-label="Galleries">
+      {primary.map(({ id, label, icon: Icon }) => (
+        <button key={id} id={`nav-${id}`} type="button"
+          className={`glass-nav-button ${currentScreen === id ? 'is-active' : ''}`}
+          onClick={() => onNavigate(id)} aria-label={label} title={label}
+          aria-current={currentScreen === id ? 'page' : undefined}>
+          <Icon size={21} strokeWidth={1.7} />
         </button>
-      </div>
-    </aside>
-  );
-};
+      ))}
+      <button type="button" className="glass-nav-button" onClick={onDiscover}
+        aria-label="Discover similar" title="Discover similar"><Radio size={21} strokeWidth={1.7} /></button>
+      <span className="glass-nav-divider" aria-hidden="true" />
+      {sources.map(({ id, label, icon: Icon }) => (
+        <button key={id} id={`nav-${id}`} type="button"
+          className={`glass-nav-button glass-source-button ${currentScreen === id ? 'is-active' : ''}`}
+          onClick={() => onNavigate(id)} aria-label={label} title={label}
+          aria-current={currentScreen === id ? 'page' : undefined}>
+          <Icon size={20} strokeWidth={1.7} />
+        </button>
+      ))}
+    </nav>
+    <div className="glass-nav-bottom">
+      <button type="button" className="glass-nav-button" onClick={onSettings}
+        aria-label="Settings" title="Settings"><Settings2 size={21} strokeWidth={1.7} /></button>
+      <button type="button" className="glass-nav-avatar" onClick={() => onNavigate('home')}
+        aria-label="Go to home" title="Home">
+        {thumbnail ? <img src={thumbnail} alt="" width="42" height="42" /> : <Music2 size={20} />}
+      </button>
+    </div>
+  </aside>
+);

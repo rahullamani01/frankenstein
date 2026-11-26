@@ -128,7 +128,7 @@ export async function loadAmbientPalette(src: string | undefined, seed: string):
   const task = (async () => {
     try {
       const image = await loadImage(src);
-      const size = 24;
+      const size = 32;
       const canvas = document.createElement('canvas');
       canvas.width = size;
       canvas.height = size;

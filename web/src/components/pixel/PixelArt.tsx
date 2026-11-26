@@ -140,7 +140,8 @@ export const PixelArt: React.FC<PixelArtProps> = ({
 
   // Spotify artwork stays unchanged; only the surrounding frame uses pixel styling.
   if (original && src) {
-    return <img src={src} alt={alt} className={`original-cover ${className}`} loading={eager ? 'eager' : 'lazy'} />;
+    return <img src={src} alt={alt} className={`original-cover ${className}`}
+      width={320} height={320} decoding="async" loading={eager ? 'eager' : 'lazy'} />;
   }
 
   return (

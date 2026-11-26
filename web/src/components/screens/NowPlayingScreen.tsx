@@ -8,6 +8,7 @@ import {
   Heart,
   AlignLeft,
   Shuffle,
+  Repeat2,
   Compass,
 } from 'lucide-react';
 import { Track } from '../../data/musicData';
@@ -34,6 +35,8 @@ export interface NowPlayingScreenProps {
   onVolumeChange: (volume: number) => void;
   shuffle: boolean;
   onToggleShuffle: () => void;
+  repeat: boolean;
+  onToggleRepeat: () => void;
   onToggleFavorite: () => void;
   onDiscoverSimilar: () => void;
   showRecommendations: boolean;
@@ -56,6 +59,8 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
   onVolumeChange,
   shuffle,
   onToggleShuffle,
+  repeat,
+  onToggleRepeat,
   onToggleFavorite,
   onDiscoverSimilar,
   showRecommendations,
@@ -120,7 +125,7 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
           >
             <div
               className="px-progress-fill"
-              style={{ width: `${Math.min(100, Math.max(0, shownPercent))}%` }}
+              style={{ transform: `scaleX(${Math.min(1, Math.max(0, shownPercent / 100))})` }}
             >
               <span className="px-progress-thumb" />
             </div>
@@ -154,6 +159,10 @@ export const NowPlayingScreen: React.FC<NowPlayingScreenProps> = ({
           </button>
           <button className="np-step" onClick={onNext} title="Next" aria-label="Next">
             <SkipForward size={22} strokeWidth={1.8} fill="currentColor" />
+          </button>
+          <button className={`np-step ${repeat ? 'is-active' : ''}`} onClick={onToggleRepeat}
+            title={repeat ? 'Repeat on' : 'Repeat off'} aria-label="Repeat" aria-pressed={repeat}>
+            <Repeat2 size={20} strokeWidth={1.8} />
           </button>
         </div>
 

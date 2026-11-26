@@ -1,9 +1,20 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem('frankenstein-theme');
+          document.documentElement.dataset.theme = saved === 'dark' || saved === 'light'
+            ? saved : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        } catch {
+          document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Frankenstein — a pixel listening gallery</title>
+    <title>Frankenstein — your listening space</title>
     <meta name="description" content="Your music, hung as living pixel artworks. A calm pastel gallery that plays your local library and conducts Spotify and Apple Music." />
     <meta name="theme-color" content="#f4eee2" />
     <meta property="og:title" content="Frankenstein — a pixel listening gallery" />

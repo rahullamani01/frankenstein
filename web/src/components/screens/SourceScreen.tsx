@@ -9,7 +9,7 @@ interface SourceScreenProps {
   currentTrackId?: string;
   isPlaying: boolean;
   onPlayTrack: (track: Track) => void;
-  onToggleFavorite: (trackId: string) => void;
+  onToggleFavorite: (trackId: string, track?: Track) => void;
 }
 
 const sourceCopy: Record<SourceScreenProps['sourceName'], { eyebrow: string; body: string; tone: 'moss' | 'peach' | 'sky' }> = {
@@ -41,7 +41,9 @@ export const SourceScreen: React.FC<SourceScreenProps> = ({
   const sourceTracks = tracks.filter((track) => track.source === sourceName);
   const copy = sourceCopy[sourceName];
   if (sourceName === 'Spotify') {
-    return <SearchScreen spotifyOnly currentTrackId={currentTrackId} isPlaying={isPlaying} onPlayTrack={onPlayTrack} />;
+    return <SearchScreen spotifyOnly currentTrackId={currentTrackId} isPlaying={isPlaying}
+      onPlayTrack={onPlayTrack} favoriteTracks={tracks.filter((track) => track.isFavorite)}
+      onToggleFavorite={(track) => onToggleFavorite(track.id, track)} />;
   }
 
   return (

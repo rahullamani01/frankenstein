@@ -16,7 +16,11 @@ interface SearchScreenProps {
   currentTrackId?: string;
   isPlaying: boolean;
   onPlayTrack: (track: Track) => void;
+  onToggleFavorite: (track: Track) => void;
+  favoriteTracks: Track[];
   spotifyOnly?: boolean;
+  searchQuery?: string;
+  onSearchQueryChange?: (value: string) => void;
 }
 
 function mapApiTrack(track: ApiTrack): Track {
@@ -36,9 +40,9 @@ function mapApiTrack(track: ApiTrack): Track {
   };
 }
 
-function mapAppleTrack(track: AppleSearchResult, index: number): Track {
+function mapAppleTrack(track: AppleSearchResult): Track {
   return {
-    id: `apple-search-${index}-${track.name}-${track.artist}`,
+    id: `apple-search-${track.name}-${track.artist}-${track.album}`,
     title: track.name,
     artist: track.artist,
     album: track.album,
@@ -57,10 +61,16 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
   currentTrackId,
   isPlaying,
   onPlayTrack,
+  onToggleFavorite,
+  favoriteTracks,
   spotifyOnly = false,
+  searchQuery,
+  onSearchQueryChange,
 }) => {
   const spotifyState = useSyncExternalStore(spotify.subscribe, spotify.getSnapshot);
-  const [query, setQuery] = useState('');
+  const [localQuery, setLocalQuery] = useState('');
+  const query = searchQuery ?? localQuery;
+  const setQuery = onSearchQueryChange ?? setLocalQuery;
   const [localResults, setLocalResults] = useState<Track[]>([]);
   const [appleResults, setAppleResults] = useState<Track[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -127,6 +137,11 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
   }, [query, spotifyState.connected, spotifyOnly]);
 
   const total = localResults.length + appleResults.length + spotifyResults.length;
+  const favoriteIds = new Set(favoriteTracks.map((track) => track.id));
+  const withFavorite = (track: Track): Track => ({
+    ...track,
+    isFavorite: favoriteIds.has(track.id) || (track.source === 'Local' && track.isFavorite),
+  });
 
   const loadMore = async () => {
     if (loadingMore || !hasMore) return;
@@ -201,11 +216,11 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
                 <span className="px-label">Full songs · Premium</span>
               </div>
               <div className="px-table">
-                <TrackTableHead showFavorite={false} showSource={false} />
+                <TrackTableHead showSource={false} />
                 {spotifyResults.map((track, index) => (
-                  <TrackRow key={track.id} track={track} index={index}
+                  <TrackRow key={track.id} track={withFavorite(track)} index={index}
                     currentTrackId={currentTrackId} isPlaying={isPlaying}
-                    onPlayTrack={onPlayTrack} showFavorite={false} showSource={false} />
+                    onPlayTrack={onPlayTrack} onToggleFavorite={() => onToggleFavorite(track)} showSource={false} />
                 ))}
               </div>
               {hasMore && (
@@ -227,16 +242,16 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
                 <span className="px-label">from your shelves</span>
               </div>
               <div className="px-table">
-                <TrackTableHead showFavorite={false} showSource={false} />
+                <TrackTableHead showSource={false} />
                 {localResults.map((track, index) => (
                   <TrackRow
                     key={track.id}
-                    track={track}
+                    track={withFavorite(track)}
                     index={index}
                     currentTrackId={currentTrackId}
                     isPlaying={isPlaying}
                     onPlayTrack={onPlayTrack}
-                    showFavorite={false}
+                    onToggleFavorite={() => onToggleFavorite(track)}
                     showSource={false}
                   />
                 ))}
@@ -251,16 +266,16 @@ export const SearchScreen: React.FC<SearchScreenProps> = ({
                 <span className="px-label">Added to your Music.app library</span>
               </div>
               <div className="px-table">
-                <TrackTableHead showFavorite={false} showSource={false} />
+                <TrackTableHead showSource={false} />
                 {appleResults.map((track, index) => (
                   <TrackRow
                     key={track.id}
-                    track={track}
+                    track={withFavorite(track)}
                     index={index}
                     currentTrackId={currentTrackId}
                     isPlaying={isPlaying}
                     onPlayTrack={onPlayTrack}
-                    showFavorite={false}
+                    onToggleFavorite={() => onToggleFavorite(track)}
                     showSource={false}
                   />
                 ))}

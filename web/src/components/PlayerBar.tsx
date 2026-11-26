@@ -7,12 +7,15 @@ import {
   Maximize2,
   Heart,
   Shuffle,
+  Repeat2,
+  AudioLines,
 } from 'lucide-react';
 import { Track } from '../data/musicData';
 import { ArtworkCrossfade } from './pixel/ArtworkCrossfade';
 import { PlayPauseIcon } from './pixel/PlayPauseIcon';
 import { PixelEqualizer, SourceTag } from './pixel/ui';
 import { useScrubber } from '../hooks/useScrubber';
+import { useGlassSheen } from '../hooks/useGlassSheen';
 
 interface PlayerBarProps {
   currentTrack: Track | null;
@@ -30,6 +33,9 @@ interface PlayerBarProps {
   onToggleShuffle: () => void;
   onToggleFavorite: () => void;
   onOpenNowPlaying: () => void;
+  onOpenLyrics: () => void;
+  repeat: boolean;
+  onToggleRepeat: () => void;
 }
 
 export const PlayerBar: React.FC<PlayerBarProps> = ({
@@ -48,8 +54,12 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
   onToggleShuffle,
   onToggleFavorite,
   onOpenNowPlaying,
+  onOpenLyrics,
+  repeat,
+  onToggleRepeat,
 }) => {
   const barRef = useRef<HTMLElement | null>(null);
+  const sheen = useGlassSheen<HTMLElement>();
   const swipe = useRef<{ active: boolean; pointerId: number; startY: number; dy: number } | null>(null);
   const swipeCleanup = useRef<() => void>(() => {});
   const {
@@ -157,8 +167,11 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
     <footer
       id="app-player-bar"
       className="pixel-player"
-      ref={barRef}
+      ref={(node) => { barRef.current = node; sheen.ref.current = node; }}
       onPointerDown={onSwipeStart}
+      onPointerEnter={sheen.onPointerEnter}
+      onPointerMove={sheen.onPointerMove}
+      onPointerLeave={sheen.onPointerLeave}
     >
       <div className="player-left">
         <button
@@ -227,6 +240,11 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           <button className="player-step" onClick={onNext} title="Next track" aria-label="Next track">
             <SkipForward size={15} strokeWidth={1.8} />
           </button>
+          <button className={`player-step ${repeat ? 'is-active' : ''}`}
+            onClick={onToggleRepeat} title={repeat ? 'Repeat on' : 'Repeat off'}
+            aria-label="Repeat" aria-pressed={repeat}>
+            <Repeat2 size={15} strokeWidth={1.8} />
+          </button>
         </div>
 
         <div className="player-progress-row">
@@ -248,7 +266,7 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           >
             <div
               className="px-progress-fill"
-              style={{ width: `${Math.min(100, Math.max(0, shownPercent))}%` }}
+              style={{ transform: `scaleX(${Math.min(1, Math.max(0, shownPercent / 100))})` }}
             >
               <span className="px-progress-thumb" />
             </div>
@@ -282,6 +300,8 @@ export const PlayerBar: React.FC<PlayerBarProps> = ({
           title="Volume"
           aria-label="Volume"
         />
+        <button type="button" className="px-icon-btn" onClick={onOpenLyrics}
+          aria-label="Open lyrics" title="Lyrics"><AudioLines size={17} strokeWidth={1.7} /></button>
         <button
           id="player-expand-btn"
           onClick={onOpenNowPlaying}

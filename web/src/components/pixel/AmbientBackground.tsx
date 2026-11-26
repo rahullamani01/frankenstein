@@ -7,6 +7,7 @@ import { hashString } from '../../theme/pixel';
 interface Layer {
   id: number;
   palette: AmbientPalette;
+  src?: string;
 }
 
 function background(palette: AmbientPalette) {
@@ -25,21 +26,21 @@ function background(palette: AmbientPalette) {
 export const AmbientBackground: React.FC<{ src?: string; seed: string }> = ({ src, seed }) => {
   const palette = useAmbientPalette(src, seed);
   const idRef = useRef(1);
-  const [layers, setLayers] = useState<Layer[]>(() => [{ id: 1, palette }]);
+  const [layers, setLayers] = useState<Layer[]>(() => [{ id: 1, palette, src }]);
 
   useEffect(() => {
     setLayers((previous) => {
-      if (previous[previous.length - 1]?.palette === palette) return previous;
+      if (previous[previous.length - 1]?.palette === palette && previous[previous.length - 1]?.src === src) return previous;
       const id = ++idRef.current;
-      return [...previous.slice(-1), { id, palette }];
+      return [...previous.slice(-1), { id, palette, src }];
     });
     const timer = window.setTimeout(() => {
       setLayers((previous) =>
         previous.length > 1 ? [previous[previous.length - 1]] : previous,
       );
-    }, MOTION.duration.ambient + 160);
+    }, 760);
     return () => window.clearTimeout(timer);
-  }, [palette]);
+  }, [palette, src]);
 
   const drift = 28 + hashString(seed) % 12;
 
@@ -52,6 +53,7 @@ export const AmbientBackground: React.FC<{ src?: string; seed: string }> = ({ sr
           style={{
             backgroundImage: background(layer.palette),
             '--ambient-drift': `${drift}s`,
+            '--ambient-art': layer.src ? `url("${layer.src.replace(/"/g, '%22')}")` : 'none',
           } as React.CSSProperties}
         />
       ))}

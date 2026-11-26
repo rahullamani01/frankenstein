@@ -4,7 +4,6 @@ import { PlayerBar } from './components/PlayerBar';
 import { HomeScreen } from './components/screens/HomeScreen';
 import { SearchScreen } from './components/screens/SearchScreen';
 import { LibraryScreen } from './components/screens/LibraryScreen';
-import { Hillside } from './components/pixel/Hillside';
 import { AlbumViewScreen } from './components/screens/AlbumViewScreen';
 import { NowPlayingOverlay } from './components/NowPlayingOverlay';
 import { DiscoveryScene } from './components/DiscoveryScene';
@@ -19,6 +18,9 @@ import { spotify } from './services/spotify';
 import { captureArtwork, startArtworkFlight, type ArtworkSource } from './utils/artworkFlight';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { getRecommendations, readRecommendations, recommendationKey, trackIdentity } from './recommendations/similar';
+import { Search as SearchIcon, Bell, Sun, Moon, X } from 'lucide-react';
+import { DevFpsMeter } from './components/DevFpsMeter';
+import { flushSync } from 'react-dom';
 
 function savedCatalogueTracks(): Track[] {
   try {
@@ -53,7 +55,7 @@ function toTrack(t: ApiTrack): Track {
 
 export default function App() {
   const [darkMode, setDarkMode] = useState(() => {
-    try { return localStorage.getItem('frankenstein-theme') === 'dark'; } catch { return false; }
+    return document.documentElement.dataset.theme === 'dark';
   });
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light';
@@ -67,6 +69,38 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('home');
+  const [topSearch, setTopSearch] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const [reduceEffects, setReduceEffects] = useState(() =>
+    savedSetting('frankenstein:reduce-effects',
+      (navigator.hardwareConcurrency || 8) <= 4 || (Number((navigator as Navigator & { deviceMemory?: number }).deviceMemory) || 8) <= 4)
+  );
+  useEffect(() => {
+    document.documentElement.dataset.effects = reduceEffects ? 'reduced' : 'full';
+    try { localStorage.setItem('frankenstein:reduce-effects', String(reduceEffects)); } catch { /* optional */ }
+  }, [reduceEffects]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const themeButton = useRef<HTMLButtonElement>(null);
+  const toggleTheme = () => {
+    const next = !darkMode;
+    const transition = (document as Document & {
+      startViewTransition?: (update: () => void) => { ready: Promise<void> };
+    }).startViewTransition;
+    if (!transition || reducedMotion) { document.documentElement.dataset.theme = next ? 'dark' : 'light'; setDarkMode(next); return; }
+    const rect = themeButton.current?.getBoundingClientRect();
+    const x = rect ? rect.left + rect.width / 2 : innerWidth / 2;
+    const y = rect ? rect.top + rect.height / 2 : 0;
+    const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    const view = transition.call(document, () => {
+      document.documentElement.dataset.theme = next ? 'dark' : 'light';
+      flushSync(() => setDarkMode(next));
+    });
+    void view.ready.then(() => document.documentElement.animate(
+      { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+      { duration: 500, easing: 'cubic-bezier(.22,1,.36,1)', pseudoElement: '::view-transition-new(root)' }
+    )).catch(() => {});
+  };
   const [previousScreen, setPreviousScreen] = useState<ScreenId>('home');
   const [selectedAlbumId, setSelectedAlbumId] = useState<string>('');
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
@@ -104,6 +138,7 @@ export default function App() {
   const seekingRef = useRef(0);
   const sceneRequest = useRef(0);
   const [shuffle, setShuffle] = useState(false);
+  const [repeat, setRepeat] = useState(false);
   const spotifyState = useSyncExternalStore(spotify.subscribe, spotify.getSnapshot);
   const currentTrackRef = useRef(currentTrack);
   currentTrackRef.current = currentTrack;
@@ -204,6 +239,10 @@ export default function App() {
     if (!track || !track.id || endedRef.current === trackIdentity(track) || Date.now() - seekingRef.current < 1600) return;
     endedRef.current = trackIdentity(track);
     setIsPlaying(false);
+    if (repeat) {
+      void handlePlayTrack(track);
+      return;
+    }
     if (showRecommendations) openDiscovery(track, true);
     else nextTrackRef.current();
   };
@@ -577,11 +616,12 @@ export default function App() {
     if (currentTrack?.source === 'Apple Music') void api.appleVolume(pct);
   };
 
-  const handleToggleFavorite = async (trackId: string) => {
+  const handleToggleFavorite = async (trackId: string, searchTrack?: Track) => {
     const streamingTrack = streamingTracks.find((t) => t.id === trackId)
       || (currentTrack?.id === trackId && currentTrack.source !== 'Local' ? currentTrack : null);
     const recommendationTrack = recommendations.find((t) => t.id === trackId && t.source !== 'Local');
-    const catalogueTrack = streamingTrack || recommendationTrack;
+    const catalogueTrack = streamingTrack || recommendationTrack
+      || (searchTrack && searchTrack.source !== 'Local' ? searchTrack : null);
     if (catalogueTrack) {
       const isFavorite = !catalogueTrack.isFavorite;
       setStreamingTracks((previous) => [
@@ -632,10 +672,15 @@ export default function App() {
   };
 
   const handleNavigate = (screen: ScreenId) => {
-    saveScroll();
-    setNowPlayingOpen(false);
-    setPreviousScreen(currentScreen);
-    setCurrentScreen(screen);
+    if (screen === currentScreen) return;
+    const update = () => {
+      saveScroll();
+      setNowPlayingOpen(false);
+      setPreviousScreen(currentScreen);
+      setCurrentScreen(screen);
+    };
+    if (reducedMotion || !document.startViewTransition) update();
+    else void document.startViewTransition(() => flushSync(update));
   };
 
   const handleOpenNowPlaying = () => {
@@ -650,6 +695,30 @@ export default function App() {
   const handleCloseNowPlaying = () => {
     setNowPlayingOpen(false);
   };
+  const shortcutRef = useRef({ play: handleTogglePlay, previous: handlePreviousTrack,
+    next: handleNextTrack, seek: handleSeek, lyrics: () => {}, theme: toggleTheme });
+  shortcutRef.current = {
+    play: handleTogglePlay, previous: handlePreviousTrack, next: handleNextTrack,
+    seek: handleSeek,
+    lyrics: () => { setLyricsRequested((value) => value + 1); setNowPlayingOpen(true); },
+    theme: toggleTheme,
+  };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.metaKey || event.ctrlKey || discoveryRef.current) return;
+      if (event.target instanceof HTMLElement &&
+        (event.target.closest('input, textarea, [contenteditable="true"], button, [role="slider"]'))) return;
+      const key = event.key.toLowerCase();
+      if (key === ' ' || key === 'k') { event.preventDefault(); shortcutRef.current.play(); }
+      else if (key === 'j') shortcutRef.current.previous();
+      else if (key === 'l') shortcutRef.current.lyrics();
+      else if (key === 't') shortcutRef.current.theme();
+      else if (key === 'arrowleft') shortcutRef.current.seek(Math.max(0, currentTimeRef.current - 5));
+      else if (key === 'arrowright') shortcutRef.current.seek(currentTimeRef.current + 5);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const recentlyPlayedAlbums = albums.slice(0, 6);
   const recentlyAddedAlbums = albums.slice().reverse().slice(0, 6);
@@ -722,10 +791,66 @@ export default function App() {
         aria-hidden={nowPlayingOpen || Boolean(discoveryTrack) || undefined}
         inert={nowPlayingOpen || Boolean(discoveryTrack) || undefined}
       >
-        <Sidebar currentScreen={currentScreen} onNavigate={handleNavigate} darkMode={darkMode} onToggleTheme={() => setDarkMode((value) => !value)} />
+        <Sidebar currentScreen={currentScreen} onNavigate={handleNavigate}
+          onDiscover={() => {
+            const track = currentTrack || tracks[0];
+            if (track) openDiscovery(track);
+            else handleNavigate('search');
+          }}
+          onSettings={() => setSettingsOpen(true)} thumbnail={displayTrack.coverUrl} />
 
         <div className="gallery-stage">
-        <Hillside playing={isPlaying} />
+        <header className="glass-topbar">
+          <div className="glass-search-wrap">
+            <SearchIcon size={19} strokeWidth={1.7} aria-hidden="true" />
+            <input type="search" aria-label="Search your music" placeholder="Search your music"
+              value={topSearch} onFocus={() => setSearchFocused(true)}
+              onBlur={() => window.setTimeout(() => setSearchFocused(false), 150)}
+              onChange={(event) => {
+                setTopSearch(event.target.value);
+                if (event.target.value.trim()) handleNavigate('search');
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') { handleNavigate('search'); setSearchFocused(false); event.currentTarget.blur(); }
+                if (event.key === 'Escape') { setSearchFocused(false); event.currentTarget.blur(); }
+              }} />
+            {topSearch && <button type="button" aria-label="Clear search" title="Clear search"
+              onClick={() => setTopSearch('')}><X size={16} /></button>}
+            {searchFocused && topSearch.trim() && (
+              <div className="glass-search-dropdown" role="status">
+                <span>Search results for “{topSearch}”</span>
+                {tracks.filter((track) => `${track.title} ${track.artist}`.toLowerCase().includes(topSearch.toLowerCase()))
+                  .slice(0, 3).map((track) => (
+                    <button type="button" key={track.id} onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => { void handlePlayTrack(track); setSearchFocused(false); }}>
+                      {track.coverUrl && <img src={track.coverUrl} alt="" width="32" height="32" />}
+                      <span>{track.title}<small>{track.artist}</small></span>
+                    </button>
+                  ))}
+                <button type="button" onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => { handleNavigate('search'); setSearchFocused(false); }}>
+                  See all results
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="glass-top-actions">
+            <button type="button" aria-label="Notifications" title="Notifications"
+              aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((value) => !value)}><Bell size={19} strokeWidth={1.7} /></button>
+            <button type="button" ref={themeButton}
+              aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+              title={darkMode ? 'Light mode' : 'Dark mode'} onClick={toggleTheme}>
+              {darkMode ? <Sun size={19} strokeWidth={1.7} /> : <Moon size={19} strokeWidth={1.7} />}
+            </button>
+            <button type="button" className="glass-top-avatar" aria-label="Open settings" title="Settings"
+              onClick={() => setSettingsOpen(true)}>
+              {displayTrack.coverUrl ? <img src={displayTrack.coverUrl} alt="" width="38" height="38" /> : 'F'}
+            </button>
+          </div>
+          {notificationsOpen && <div className="glass-notification-panel" role="status">
+            <strong>All caught up</strong><span>Your music is ready whenever you are.</span>
+          </div>}
+        </header>
         <main
           id="app-main-content"
           ref={mainRef}
@@ -745,8 +870,12 @@ export default function App() {
               tracks={tracks}
               currentTrack={currentTrack}
               isPlaying={isPlaying}
+              currentTime={currentTime}
               darkMode={darkMode}
               onPlayTrack={handlePlayTrack}
+              onTogglePlay={handleTogglePlay}
+              onPrevious={handlePreviousTrack}
+              onNext={handleNextTrack}
               onOpenNowPlaying={handleOpenNowPlaying}
               offline={backendOk === false}
               onRetry={() => void refreshLibrary()}
@@ -758,7 +887,11 @@ export default function App() {
             currentTrackId={currentTrack?.id}
             isPlaying={isPlaying}
             onPlayTrack={handlePlayTrack}
-         />
+            favoriteTracks={favoriteTracks}
+            onToggleFavorite={(track) => void handleToggleFavorite(track.id, track)}
+            searchQuery={topSearch}
+            onSearchQueryChange={setTopSearch}
+          />
        )}
 
           {currentScreen === 'library' && (
@@ -857,6 +990,21 @@ export default function App() {
         </main>
         </div>
       </div>
+      {settingsOpen && (
+        <div className="glass-settings-backdrop" onClick={() => setSettingsOpen(false)}>
+          <section className="glass-settings" role="dialog" aria-modal="true" aria-label="Settings"
+            onClick={(event) => event.stopPropagation()}>
+            <div className="glass-section-header"><h2>Settings</h2>
+              <button type="button" aria-label="Close settings" onClick={() => setSettingsOpen(false)}><X size={20} /></button>
+            </div>
+            <label><span>Dark appearance</span><input type="checkbox" checked={darkMode}
+              onChange={(event) => setDarkMode(event.target.checked)} /></label>
+            <label><span>Reduce glass effects</span><input type="checkbox" checked={reduceEffects}
+              onChange={(event) => setReduceEffects(event.target.checked)} /></label>
+            <p>Music stays on this device. Spotify and Apple Music use their existing connections.</p>
+          </section>
+        </div>
+      )}
 
       <div
         className="player-slot"
@@ -877,10 +1025,16 @@ export default function App() {
           onVolumeChange={handleVolumeChange}
           shuffle={shuffle}
           onToggleShuffle={() => setShuffle((value) => !value)}
+          repeat={repeat}
+          onToggleRepeat={() => setRepeat((value) => !value)}
           onToggleFavorite={() =>
             displayTrack.id && handleToggleFavorite(displayTrack.id)
           }
           onOpenNowPlaying={handleOpenNowPlaying}
+          onOpenLyrics={() => {
+            setLyricsRequested((value) => value + 1);
+            setNowPlayingOpen(true);
+          }}
         />
       </div>
 
@@ -901,6 +1055,8 @@ export default function App() {
         onVolumeChange={handleVolumeChange}
         shuffle={shuffle}
         onToggleShuffle={() => setShuffle((value) => !value)}
+        repeat={repeat}
+        onToggleRepeat={() => setRepeat((value) => !value)}
         onToggleFavorite={() =>
           displayTrack.id && handleToggleFavorite(displayTrack.id)
         }
@@ -955,6 +1111,7 @@ export default function App() {
           onVolume={handleVolumeChange}
         />
       )}
+      <DevFpsMeter />
     </div>
   );
 }
