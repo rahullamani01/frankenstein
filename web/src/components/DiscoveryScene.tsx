@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, Heart, ListMusic, Mic2, MoreHorizontal, Pause, Play, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Heart, ListMusic, Mic2, MoreHorizontal, Pause, Play, Settings2, SkipBack, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import type { Track } from '../data/musicData';
 import { useAmbientPalette } from '../hooks/useAmbientPalette';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -72,8 +72,9 @@ export function DiscoveryScene({
   const [index, setIndex] = useState(0);
   const [ready, setReady] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const [background, setBackground] = useState('');
-  const [backgroundVisible, setBackgroundVisible] = useState(false);
+  const [backgrounds, setBackgrounds] = useState<[string, string]>(['', '']);
+  const [activeBackground, setActiveBackground] = useState(0);
+  const activeBackgroundRef = useRef(0);
   const [menu, setMenu] = useState(false);
   const [settings, setSettings] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
@@ -113,14 +114,19 @@ export function DiscoveryScene({
 
   useEffect(() => {
     let cancelled = false;
-    setBackgroundVisible(false);
     window.clearTimeout(bgTimer.current);
     void blurredArtwork(selected?.coverUrl || '').then((small) => {
       if (cancelled) return;
       bgTimer.current = window.setTimeout(() => {
-        setBackground(small);
-        setBackgroundVisible(true);
-      }, reduced ? 0 : 230);
+        const next = 1 - activeBackgroundRef.current;
+        setBackgrounds((previous) => {
+          const updated: [string, string] = [...previous];
+          updated[next] = small;
+          return updated;
+        });
+        activeBackgroundRef.current = next;
+        setActiveBackground(next);
+      }, reduced ? 0 : 120);
     });
     return () => {
       cancelled = true;
@@ -208,7 +214,7 @@ export function DiscoveryScene({
   moveRef.current = move;
 
   // Listen on the window so the arrows still work if focus drifts outside the
-  // scene (another panel, the now-playing sheet, or a second window).
+  // scene (for example, to the underlying now-playing sheet).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (leavingRef.current) return;
@@ -288,28 +294,31 @@ export function DiscoveryScene({
       }}
       style={{ '--discovery-tint': palette.a, '--discovery-tint-alt': palette.b } as CSSProperties}
     >
-      <div
-        className="discovery-backdrop"
-        style={{
-          backgroundImage: background ? `url("${background.replace(/"/g, '%22')}")` : undefined,
-          opacity: backgroundVisible ? 1 : 0,
-        }}
-        aria-hidden="true"
-      />
+      {backgrounds.map((background, layer) => (
+        <div
+          key={layer}
+          className="discovery-backdrop"
+          style={{
+            backgroundImage: background ? `url("${background.replace(/"/g, '%22')}")` : undefined,
+            opacity: background && layer === activeBackground ? 1 : 0,
+          }}
+          aria-hidden="true"
+        />
+      ))}
       <div className="discovery-wash" aria-hidden="true" />
 
       <header className="discovery-header">
-        <button type="button" className="discovery-back" onClick={() => exit(onClose)}>
-          <ArrowLeft size={18} /> Back
+        <button type="button" className="discovery-back" aria-label="Back to now playing" title="Back to now playing" onClick={() => exit(onClose)}>
+          <ArrowLeft size={19} strokeWidth={1.7} />
         </button>
         <div className="discovery-heading">
           <span>THE LISTENING GALLERY</span>
           <h1>Up next <em>/</em> Similar to this</h1>
-          <p>Inspired by {track.title} · {track.artist}</p>
+          <p title={`Inspired by ${track.title} · ${track.artist}`}>Inspired by {track.title} · {track.artist}</p>
         </div>
         <div className="discovery-settings-wrap">
           <button type="button" className="discovery-icon" aria-label="Recommendation settings" aria-expanded={settings} onClick={() => { cancelCountdown(); setSettings(!settings); }}>
-            ⚙
+            <Settings2 size={19} strokeWidth={1.7} />
           </button>
           {settings && (
             <div className="discovery-settings">
@@ -350,6 +359,7 @@ export function DiscoveryScene({
                   type="button"
                   className="discovery-card"
                   aria-label={`${item.title} by ${item.artist}${position === index ? ', focused — play' : ', focus card'}${trackIdentity(item) === queuedId ? ', next in queue' : ''}`}
+                  title={`${item.title} — ${item.artist}`}
                   aria-current={position === index ? 'true' : undefined}
                   tabIndex={Math.abs(distance) > 2 ? -1 : 0}
                   onClick={() => {
@@ -357,6 +367,7 @@ export function DiscoveryScene({
                     if (position === index) playSelected();
                     else { setIndex(position); setMenu(false); }
                   }}
+                  onDoubleClick={() => { cancelCountdown(); exit(() => onPlay(item)); }}
                 >
                   <span className="discovery-art">
                     {item.coverUrl ? (
@@ -371,8 +382,8 @@ export function DiscoveryScene({
                   </span>
                   <span className="discovery-card-copy">
                     {trackIdentity(item) === queuedId && <span className="discovery-queued">NEXT IN QUEUE</span>}
-                    <strong>{item.title}</strong>
-                    <small>{item.artist}</small>
+                    <strong title={item.title}>{item.title}</strong>
+                    <small title={item.artist}>{item.artist}</small>
                   </span>
                   {position === index && countdown && (
                     <svg className="discovery-countdown" viewBox="0 0 40 40" aria-label="Auto-playing in ten seconds">
@@ -381,6 +392,13 @@ export function DiscoveryScene({
                     </svg>
                   )}
                 </button>
+                {item.coverUrl && (
+                  <span
+                    className="discovery-reflection"
+                    style={{ backgroundImage: `url("${item.coverUrl.replace(/"/g, '%22')}")` }}
+                    aria-hidden="true"
+                  />
+                )}
                 {position === index && selected && (
                   <div className="discovery-card-menu-wrap">
                     <button type="button" className="discovery-icon" aria-label="More options for focused song" aria-expanded={menu} onClick={() => { cancelCountdown(); setMenu(!menu); }}>
@@ -410,13 +428,12 @@ export function DiscoveryScene({
       </div>
 
       <nav className="discovery-controls" aria-label="Playback controls">
-        <button type="button" aria-label="Previous track" onClick={() => exit(onPrevious)}><SkipBack size={20} fill="currentColor" /></button>
-        <button type="button" aria-label={isPlaying ? 'Pause' : 'Play'} onClick={() => { cancelCountdown(); onTogglePlay(); }}>{isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}</button>
-        <button type="button" aria-label="Next track" onClick={() => exit(onNext)}><SkipForward size={20} fill="currentColor" /></button>
+        <button type="button" aria-label="Previous track" onClick={() => exit(onPrevious)}><SkipBack size={18} fill="currentColor" /></button>
+        <button type="button" aria-label={isPlaying ? 'Pause' : 'Play'} onClick={() => { cancelCountdown(); onTogglePlay(); }}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button>
+        <button type="button" aria-label="Next track" onClick={() => exit(onNext)}><SkipForward size={18} fill="currentColor" /></button>
         <div className="discovery-mini" aria-label={`Last played: ${track.title} by ${track.artist}`}>
           <div className="discovery-mini-art">{track.coverUrl ? <img src={track.coverUrl} alt="" /> : <ArtworkCrossfade original={false} seed={track.id} alt="" />}</div>
-          <span><strong>{track.title}</strong><small>{track.artist}</small></span>
-          <div className="discovery-mini-progress" style={{ '--progress': `${Math.min(100, currentTime / Math.max(1, track.durationSec) * 100)}%` } as CSSProperties} />
+          <span title={`${track.title} — ${track.artist}`}><strong>{track.title}</strong><small>{track.artist}</small></span>
         </div>
         <button type="button" className="discovery-extra" aria-label="Open lyrics" onClick={() => exit(onLyrics)}><Mic2 size={18} /></button>
         <div className="discovery-queue-wrap">
@@ -427,6 +444,9 @@ export function DiscoveryScene({
         </div>
         <button type="button" className="discovery-extra" aria-label={volume === 0 ? 'Unmute' : 'Mute'} onClick={() => onVolume(volume === 0 ? 0.7 : 0)}>{volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>
         <input className="discovery-volume" type="range" min="0" max="1" step="0.01" aria-label="Volume" value={volume} onChange={(e) => onVolume(Number(e.target.value))} />
+        <div className="discovery-dock-progress" role="progressbar" aria-label="Playback progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(100, currentTime / Math.max(1, track.durationSec) * 100))}>
+          <span style={{ transform: `scaleX(${Math.max(0, Math.min(1, currentTime / Math.max(1, track.durationSec)))})` }} />
+        </div>
       </nav>
       {selected && <span className="discovery-instruction">← → Browse · Enter Play · Esc Back</span>}
     </div>

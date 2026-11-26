@@ -644,7 +644,6 @@ export default function App() {
 
   const handleDiscoverSimilar = () => {
     if (!currentTrack) return;
-    if (isPlaying) void handleTogglePlay();
     openDiscovery(currentTrack);
   };
 
